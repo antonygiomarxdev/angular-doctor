@@ -1,4 +1,10 @@
-export type AngularFramework = "angular-cli" | "nx" | "analog" | "ionic" | "universal" | "unknown";
+export type AngularFramework =
+  | "angular-cli"
+  | "nx"
+  | "analog"
+  | "ionic"
+  | "universal"
+  | "unknown";
 
 export interface ProjectInfo {
   rootDirectory: string;
@@ -47,6 +53,7 @@ export interface ScanOptions {
   deadCode?: boolean;
   verbose?: boolean;
   scoreOnly?: boolean;
+  report?: boolean | string;
   includePaths?: string[];
 }
 

@@ -17,6 +17,7 @@ interface CliFlags {
   verbose: boolean;
   score: boolean;
   yes: boolean;
+  report?: boolean | string;
   project?: string;
   diff?: boolean | string;
 }
@@ -41,7 +42,9 @@ const AUTOMATED_ENVIRONMENT_VARIABLES = [
 ];
 
 const isAutomatedEnvironment = (): boolean =>
-  AUTOMATED_ENVIRONMENT_VARIABLES.some((envVariable) => Boolean(process.env[envVariable]));
+  AUTOMATED_ENVIRONMENT_VARIABLES.some((envVariable) =>
+    Boolean(process.env[envVariable]),
+  );
 
 const resolveCliScanOptions = (
   flags: CliFlags,
@@ -53,9 +56,14 @@ const resolveCliScanOptions = (
 
   return {
     lint: isCliOverride("lint") ? flags.lint : (userConfig?.lint ?? flags.lint),
-    deadCode: isCliOverride("deadCode") ? flags.deadCode : (userConfig?.deadCode ?? flags.deadCode),
-    verbose: isCliOverride("verbose") ? Boolean(flags.verbose) : (userConfig?.verbose ?? false),
+    deadCode: isCliOverride("deadCode")
+      ? flags.deadCode
+      : (userConfig?.deadCode ?? flags.deadCode),
+    verbose: isCliOverride("verbose")
+      ? Boolean(flags.verbose)
+      : (userConfig?.verbose ?? false),
     scoreOnly: flags.score,
+    report: flags.report,
   };
 };
 
@@ -68,7 +76,9 @@ const resolveDiffMode = async (
   if (effectiveDiff !== undefined && effectiveDiff !== false) {
     if (diffInfo) return true;
     if (!isScoreOnly) {
-      logger.warn("No feature branch or uncommitted changes detected. Running full scan.");
+      logger.warn(
+        "No feature branch or uncommitted changes detected. Running full scan.",
+      );
       logger.break();
     }
     return false;
@@ -94,8 +104,12 @@ const program = new Command()
   .option("--no-dead-code", "skip dead code detection")
   .option("--verbose", "show file details per rule")
   .option("--score", "output only the score")
+  .option("--report [path]", "write a markdown report (optional output path)")
   .option("-y, --yes", "skip prompts, scan all workspace projects")
-  .option("--project <name>", "select workspace project (comma-separated for multiple)")
+  .option(
+    "--project <name>",
+    "select workspace project (comma-separated for multiple)",
+  )
   .option("--diff [base]", "scan only files changed vs base branch")
   .action(async (directory: string, flags: CliFlags) => {
     const isScoreOnly = flags.score;
@@ -110,7 +124,8 @@ const program = new Command()
       }
 
       const scanOptions = resolveCliScanOptions(flags, userConfig, program);
-      const shouldSkipPrompts = flags.yes || isAutomatedEnvironment() || !process.stdin.isTTY;
+      const shouldSkipPrompts =
+        flags.yes || isAutomatedEnvironment() || !process.stdin.isTTY;
 
       // Discover and (optionally) prompt to select workspace projects
       const projectDirectories = await selectProjects(
@@ -121,7 +136,8 @@ const program = new Command()
 
       const isDiffCliOverride = program.getOptionValueSource("diff") === "cli";
       const effectiveDiff = isDiffCliOverride ? flags.diff : userConfig?.diff;
-      const explicitBaseBranch = typeof effectiveDiff === "string" ? effectiveDiff : undefined;
+      const explicitBaseBranch =
+        typeof effectiveDiff === "string" ? effectiveDiff : undefined;
       const diffInfo = getDiffInfo(resolvedDirectory, explicitBaseBranch);
       const isDiffMode = await resolveDiffMode(
         diffInfo,
@@ -145,12 +161,19 @@ const program = new Command()
         let includePaths: string[] | undefined;
 
         if (isDiffMode) {
-          const projectDiffInfo = getDiffInfo(projectDirectory, explicitBaseBranch);
+          const projectDiffInfo = getDiffInfo(
+            projectDirectory,
+            explicitBaseBranch,
+          );
           if (projectDiffInfo) {
-            const changedSourceFiles = filterSourceFiles(projectDiffInfo.changedFiles);
+            const changedSourceFiles = filterSourceFiles(
+              projectDiffInfo.changedFiles,
+            );
             if (changedSourceFiles.length === 0) {
               if (!isScoreOnly) {
-                logger.dim(`No changed source files in ${projectDirectory}, skipping.`);
+                logger.dim(
+                  `No changed source files in ${projectDirectory}, skipping.`,
+                );
                 logger.break();
               }
               continue;

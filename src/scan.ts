@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import {
   MILLISECONDS_PER_SECOND,
@@ -10,12 +10,29 @@ import {
   SCORE_GOOD_THRESHOLD,
   SCORE_OK_THRESHOLD,
 } from "./constants.js";
-import type { AngularDoctorConfig, Diagnostic, ProjectInfo, ScanOptions, ScanResult, ScoreResult } from "./types.js";
+import type {
+  AngularDoctorConfig,
+  Diagnostic,
+  ProjectInfo,
+  ScanOptions,
+  ScanResult,
+  ScoreResult,
+} from "./types.js";
 import { calculateScore } from "./utils/calculate-score.js";
 import { colorizeByScore } from "./utils/colorize-by-score.js";
-import { combineDiagnostics, computeIncludePaths } from "./utils/combine-diagnostics.js";
-import { discoverProject, formatFrameworkName } from "./utils/discover-project.js";
-import { type FramedLine, createFramedLine, printFramedBox } from "./utils/framed-box.js";
+import {
+  combineDiagnostics,
+  computeIncludePaths,
+} from "./utils/combine-diagnostics.js";
+import {
+  discoverProject,
+  formatFrameworkName,
+} from "./utils/discover-project.js";
+import {
+  type FramedLine,
+  createFramedLine,
+  printFramedBox,
+} from "./utils/framed-box.js";
 import { groupBy } from "./utils/group-by.js";
 import { highlighter } from "./utils/highlighter.js";
 import { indentMultilineText } from "./utils/indent-multiline-text.js";
@@ -35,10 +52,15 @@ const SEVERITY_ORDER: Record<Diagnostic["severity"], number> = {
   warning: 1,
 };
 
-const colorizeBySeverity = (text: string, severity: Diagnostic["severity"]): string =>
+const colorizeBySeverity = (
+  text: string,
+  severity: Diagnostic["severity"],
+): string =>
   severity === "error" ? highlighter.error(text) : highlighter.warn(text);
 
-const sortBySeverity = (diagnosticGroups: [string, Diagnostic[]][]): [string, Diagnostic[]][] =>
+const sortBySeverity = (
+  diagnosticGroups: [string, Diagnostic[]][],
+): [string, Diagnostic[]][] =>
   diagnosticGroups.toSorted(([, diagnosticsA], [, diagnosticsB]) => {
     const severityA = SEVERITY_ORDER[diagnosticsA[0].severity];
     const severityB = SEVERITY_ORDER[diagnosticsB[0].severity];
@@ -60,7 +82,10 @@ const buildFileLineMap = (diagnostics: Diagnostic[]): Map<string, number[]> => {
   return fileLines;
 };
 
-const printDiagnostics = (diagnostics: Diagnostic[], isVerbose: boolean): void => {
+const printDiagnostics = (
+  diagnostics: Diagnostic[],
+  isVerbose: boolean,
+): void => {
   const ruleGroups = groupBy(
     diagnostics,
     (diagnostic) => `${diagnostic.plugin}/${diagnostic.rule}`,
@@ -73,7 +98,10 @@ const printDiagnostics = (diagnostics: Diagnostic[], isVerbose: boolean): void =
     const severitySymbol = firstDiagnostic.severity === "error" ? "✗" : "⚠";
     const icon = colorizeBySeverity(severitySymbol, firstDiagnostic.severity);
     const count = ruleDiagnostics.length;
-    const countLabel = count > 1 ? colorizeBySeverity(` (${count})`, firstDiagnostic.severity) : "";
+    const countLabel =
+      count > 1
+        ? colorizeBySeverity(` (${count})`, firstDiagnostic.severity)
+        : "";
 
     logger.log(`  ${icon} ${firstDiagnostic.message}${countLabel}`);
     if (firstDiagnostic.help) {
@@ -100,7 +128,10 @@ const formatElapsedTime = (elapsedMilliseconds: number): string => {
   return `${(elapsedMilliseconds / MILLISECONDS_PER_SECOND).toFixed(1)}s`;
 };
 
-const formatRuleSummary = (ruleKey: string, ruleDiagnostics: Diagnostic[]): string => {
+const formatRuleSummary = (
+  ruleKey: string,
+  ruleDiagnostics: Diagnostic[],
+): string => {
   const firstDiagnostic = ruleDiagnostics[0];
   const fileLines = buildFileLineMap(ruleDiagnostics);
 
@@ -126,7 +157,117 @@ const formatRuleSummary = (ruleKey: string, ruleDiagnostics: Diagnostic[]): stri
   return sections.join("\n") + "\n";
 };
 
-const writeDiagnosticsDirectory = (diagnostics: Diagnostic[]): string => {
+const buildMarkdownReport = (
+  diagnostics: Diagnostic[],
+  elapsedMilliseconds: number,
+  scoreResult: ScoreResult | null,
+  totalSourceFileCount: number,
+): string => {
+  const errorCount = diagnostics.filter(
+    (diagnostic) => diagnostic.severity === "error",
+  ).length;
+  const warningCount = diagnostics.filter(
+    (diagnostic) => diagnostic.severity === "warning",
+  ).length;
+  const affectedFileCount = collectAffectedFiles(diagnostics).size;
+  const elapsed = formatElapsedTime(elapsedMilliseconds);
+
+  const lines: string[] = [
+    "# Angular Doctor Report",
+    "",
+    `Generated: ${new Date().toISOString()}`,
+    "",
+  ];
+
+  if (scoreResult) {
+    lines.push(
+      "## Score",
+      "",
+      `**${scoreResult.score} / ${PERFECT_SCORE}** — ${scoreResult.label}`,
+      "",
+    );
+  }
+
+  lines.push(
+    "## Summary",
+    "",
+    `- Errors: **${errorCount}**`,
+    `- Warnings: **${warningCount}**`,
+    totalSourceFileCount > 0
+      ? `- Affected files: **${affectedFileCount}/${totalSourceFileCount}**`
+      : `- Affected files: **${affectedFileCount}**`,
+    `- Elapsed: **${elapsed}**`,
+    "",
+  );
+
+  if (diagnostics.length === 0) {
+    lines.push("## Diagnostics", "", "No issues found.", "");
+    return lines.join("\n");
+  }
+
+  const ruleGroups = groupBy(
+    diagnostics,
+    (diagnostic) => `${diagnostic.plugin}/${diagnostic.rule}`,
+  );
+  const sortedRuleGroups = sortBySeverity([...ruleGroups.entries()]);
+
+  lines.push("## Diagnostics", "");
+
+  for (const [ruleKey, ruleDiagnostics] of sortedRuleGroups) {
+    const firstDiagnostic = ruleDiagnostics[0];
+    const fileLines = buildFileLineMap(ruleDiagnostics);
+
+    lines.push(`### ${ruleKey}`, "");
+    lines.push(
+      `- Severity: **${firstDiagnostic.severity}**`,
+      `- Category: **${firstDiagnostic.category}**`,
+      `- Count: **${ruleDiagnostics.length}**`,
+      "",
+      firstDiagnostic.message,
+      "",
+    );
+
+    if (firstDiagnostic.help) {
+      lines.push(`**Suggestion:** ${firstDiagnostic.help}`, "");
+    }
+
+    lines.push("**Files:**");
+    for (const [filePath, linesList] of fileLines) {
+      const lineLabel = linesList.length > 0 ? `: ${linesList.join(", ")}` : "";
+      lines.push(`- ${filePath}${lineLabel}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+};
+
+const resolveReportPath = (
+  report: boolean | string | undefined,
+  outputDirectory: string,
+  baseDirectory: string,
+): string | null => {
+  if (!report) return null;
+
+  if (typeof report === "string") {
+    const absolutePath = isAbsolute(report)
+      ? report
+      : resolve(baseDirectory, report);
+    if (extname(absolutePath)) return absolutePath;
+    return join(absolutePath, "report.md");
+  }
+
+  return join(outputDirectory, "report.md");
+};
+
+const writeDiagnosticsDirectory = (
+  diagnostics: Diagnostic[],
+  elapsedMilliseconds: number,
+  scoreResult: ScoreResult | null,
+  totalSourceFileCount: number,
+  report: boolean | string | undefined,
+  baseDirectory: string,
+): { outputDirectory: string; markdownPath: string | null } => {
   const outputDirectory = join(tmpdir(), `angular-doctor-${randomUUID()}`);
   mkdirSync(outputDirectory);
 
@@ -138,16 +279,42 @@ const writeDiagnosticsDirectory = (diagnostics: Diagnostic[]): string => {
 
   for (const [ruleKey, ruleDiagnostics] of sortedRuleGroups) {
     const fileName = ruleKey.replace(/\//g, "--") + ".txt";
-    writeFileSync(join(outputDirectory, fileName), formatRuleSummary(ruleKey, ruleDiagnostics));
+    writeFileSync(
+      join(outputDirectory, fileName),
+      formatRuleSummary(ruleKey, ruleDiagnostics),
+    );
   }
 
-  writeFileSync(join(outputDirectory, "diagnostics.json"), JSON.stringify(diagnostics, null, 2));
+  writeFileSync(
+    join(outputDirectory, "diagnostics.json"),
+    JSON.stringify(diagnostics, null, 2),
+  );
 
-  return outputDirectory;
+  const markdownPath = resolveReportPath(
+    report,
+    outputDirectory,
+    baseDirectory,
+  );
+  if (markdownPath) {
+    mkdirSync(dirname(markdownPath), { recursive: true });
+    writeFileSync(
+      markdownPath,
+      buildMarkdownReport(
+        diagnostics,
+        elapsedMilliseconds,
+        scoreResult,
+        totalSourceFileCount,
+      ),
+    );
+  }
+
+  return { outputDirectory, markdownPath };
 };
 
 const buildScoreBarSegments = (score: number): ScoreBarSegments => {
-  const filledCount = Math.round((score / PERFECT_SCORE) * SCORE_BAR_WIDTH_CHARS);
+  const filledCount = Math.round(
+    (score / PERFECT_SCORE) * SCORE_BAR_WIDTH_CHARS,
+  );
   const emptyCount = SCORE_BAR_WIDTH_CHARS - filledCount;
 
   return {
@@ -199,11 +366,14 @@ const buildBrandingLines = (scoreResult: ScoreResult | null): FramedLine[] => {
 
   if (scoreResult) {
     const [eyes, mouth] = getDoctorFace(scoreResult.score);
-    const scoreColorizer = (text: string): string => colorizeByScore(text, scoreResult.score);
+    const scoreColorizer = (text: string): string =>
+      colorizeByScore(text, scoreResult.score);
 
     lines.push(createFramedLine("┌─────┐", scoreColorizer("┌─────┐")));
     lines.push(createFramedLine(`│ ${eyes} │`, scoreColorizer(`│ ${eyes} │`)));
-    lines.push(createFramedLine(`│ ${mouth} │`, scoreColorizer(`│ ${mouth} │`)));
+    lines.push(
+      createFramedLine(`│ ${mouth} │`, scoreColorizer(`│ ${mouth} │`)),
+    );
     lines.push(createFramedLine("└─────┘", scoreColorizer("└─────┘")));
     lines.push(createFramedLine("Angular Doctor"));
     lines.push(createFramedLine(""));
@@ -213,13 +383,21 @@ const buildBrandingLines = (scoreResult: ScoreResult | null): FramedLine[] => {
     lines.push(createFramedLine(scoreLinePlainText, scoreLineRenderedText));
     lines.push(createFramedLine(""));
     lines.push(
-      createFramedLine(buildPlainScoreBar(scoreResult.score), buildScoreBar(scoreResult.score)),
+      createFramedLine(
+        buildPlainScoreBar(scoreResult.score),
+        buildScoreBar(scoreResult.score),
+      ),
     );
     lines.push(createFramedLine(""));
   } else {
     lines.push(createFramedLine("Angular Doctor"));
     lines.push(createFramedLine(""));
-    lines.push(createFramedLine("Score unavailable", highlighter.dim("Score unavailable")));
+    lines.push(
+      createFramedLine(
+        "Score unavailable",
+        highlighter.dim("Score unavailable"),
+      ),
+    );
     lines.push(createFramedLine(""));
   }
 
@@ -231,8 +409,12 @@ const buildCountsSummaryLine = (
   totalSourceFileCount: number,
   elapsedMilliseconds: number,
 ): FramedLine => {
-  const errorCount = diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
-  const warningCount = diagnostics.filter((diagnostic) => diagnostic.severity === "warning").length;
+  const errorCount = diagnostics.filter(
+    (diagnostic) => diagnostic.severity === "error",
+  ).length;
+  const warningCount = diagnostics.filter(
+    (diagnostic) => diagnostic.severity === "warning",
+  ).length;
   const affectedFileCount = collectAffectedFiles(diagnostics).size;
   const elapsed = formatElapsedTime(elapsedMilliseconds);
 
@@ -257,7 +439,10 @@ const buildCountsSummaryLine = (
   const elapsedTimeText = `in ${elapsed}`;
 
   plainParts.push(fileCountText, elapsedTimeText);
-  renderedParts.push(highlighter.dim(fileCountText), highlighter.dim(elapsedTimeText));
+  renderedParts.push(
+    highlighter.dim(fileCountText),
+    highlighter.dim(elapsedTimeText),
+  );
 
   return createFramedLine(plainParts.join("  "), renderedParts.join("  "));
 };
@@ -267,17 +452,33 @@ const printSummary = (
   elapsedMilliseconds: number,
   scoreResult: ScoreResult | null,
   totalSourceFileCount: number,
+  report: boolean | string | undefined,
+  baseDirectory: string,
 ): void => {
   const summaryFramedLines = [
     ...buildBrandingLines(scoreResult),
-    buildCountsSummaryLine(diagnostics, totalSourceFileCount, elapsedMilliseconds),
+    buildCountsSummaryLine(
+      diagnostics,
+      totalSourceFileCount,
+      elapsedMilliseconds,
+    ),
   ];
   printFramedBox(summaryFramedLines);
 
   try {
-    const diagnosticsDirectory = writeDiagnosticsDirectory(diagnostics);
+    const { outputDirectory, markdownPath } = writeDiagnosticsDirectory(
+      diagnostics,
+      elapsedMilliseconds,
+      scoreResult,
+      totalSourceFileCount,
+      report,
+      baseDirectory,
+    );
     logger.break();
-    logger.dim(`  Full diagnostics written to ${diagnosticsDirectory}`);
+    logger.dim(`  Full diagnostics written to ${outputDirectory}`);
+    if (markdownPath) {
+      logger.dim(`  Markdown report written to ${markdownPath}`);
+    }
   } catch {
     logger.break();
   }
@@ -288,6 +489,7 @@ interface ResolvedScanOptions {
   deadCode: boolean;
   verbose: boolean;
   scoreOnly: boolean;
+  report: boolean | string | undefined;
   includePaths: string[];
 }
 
@@ -299,6 +501,7 @@ const mergeScanOptions = (
   deadCode: inputOptions.deadCode ?? userConfig?.deadCode ?? true,
   verbose: inputOptions.verbose ?? userConfig?.verbose ?? false,
   scoreOnly: inputOptions.scoreOnly ?? false,
+  report: inputOptions.report ?? false,
   includePaths: inputOptions.includePaths ?? [],
 });
 
@@ -315,7 +518,9 @@ const printProjectDetection = (
     spinner(message).start().succeed(message);
   };
 
-  completeStep(`Detecting framework. Found ${highlighter.info(frameworkLabel)}.`);
+  completeStep(
+    `Detecting framework. Found ${highlighter.info(frameworkLabel)}.`,
+  );
   completeStep(
     `Detecting Angular version. Found ${highlighter.info(`Angular ${projectInfo.angularVersion}`)}.`,
   );
@@ -325,9 +530,13 @@ const printProjectDetection = (
   );
 
   if (isDiffMode) {
-    completeStep(`Scanning ${highlighter.info(`${includePaths.length}`)} changed source files.`);
+    completeStep(
+      `Scanning ${highlighter.info(`${includePaths.length}`)} changed source files.`,
+    );
   } else {
-    completeStep(`Found ${highlighter.info(`${projectInfo.sourceFileCount}`)} source files.`);
+    completeStep(
+      `Found ${highlighter.info(`${projectInfo.sourceFileCount}`)} source files.`,
+    );
   }
 
   if (userConfig) {
@@ -363,7 +572,9 @@ export const scan = async (
 
   const lintPromise = options.lint
     ? (async () => {
-        const lintSpinner = options.scoreOnly ? null : spinner("Running lint checks...").start();
+        const lintSpinner = options.scoreOnly
+          ? null
+          : spinner("Running lint checks...").start();
         try {
           const lintDiagnostics = await runEslint(
             directory,
@@ -393,15 +604,24 @@ export const scan = async (
             return knipDiagnostics;
           } catch (error) {
             didDeadCodeFail = true;
-            deadCodeSpinner?.fail("Dead code detection failed (non-fatal, skipping).");
+            deadCodeSpinner?.fail(
+              "Dead code detection failed (non-fatal, skipping).",
+            );
             logger.error(String(error));
             return [];
           }
         })()
       : Promise.resolve<Diagnostic[]>([]);
 
-  const [lintDiagnostics, deadCodeDiagnostics] = await Promise.all([lintPromise, deadCodePromise]);
-  const diagnostics = combineDiagnostics(lintDiagnostics, deadCodeDiagnostics, userConfig);
+  const [lintDiagnostics, deadCodeDiagnostics] = await Promise.all([
+    lintPromise,
+    deadCodePromise,
+  ]);
+  const diagnostics = combineDiagnostics(
+    lintDiagnostics,
+    deadCodeDiagnostics,
+    userConfig,
+  );
 
   const elapsedMilliseconds = performance.now() - startTime;
 
@@ -439,19 +659,25 @@ export const scan = async (
 
   printDiagnostics(diagnostics, options.verbose);
 
-  const displayedSourceFileCount = isDiffMode ? includePaths.length : projectInfo.sourceFileCount;
+  const displayedSourceFileCount = isDiffMode
+    ? includePaths.length
+    : projectInfo.sourceFileCount;
 
   printSummary(
     diagnostics,
     elapsedMilliseconds,
     scoreResult,
     displayedSourceFileCount,
+    options.report,
+    directory,
   );
 
   if (hasSkippedChecks) {
     const skippedLabel = skippedChecks.join(" and ");
     logger.break();
-    logger.warn(`  Note: ${skippedLabel} checks failed — score may be incomplete.`);
+    logger.warn(
+      `  Note: ${skippedLabel} checks failed — score may be incomplete.`,
+    );
   }
 
   return { diagnostics, scoreResult, skippedChecks };
