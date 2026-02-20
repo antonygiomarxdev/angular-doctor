@@ -1,6 +1,6 @@
 {
   "name": "angular-doctor",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "author": "Antony Giomar <antonygiomarx@gmail.com>",
   "description": "Diagnose and fix issues in your Angular app",
   "repository": {
