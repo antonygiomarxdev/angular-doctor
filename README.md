@@ -13,9 +13,26 @@ Angular Doctor detects your Angular version and framework (Angular CLI, Nx, Ioni
 
 Diagnostics are scored by severity to produce a **0–100 health score** (75+ Great, 50–74 Needs work, <50 Critical).
 
+## Workspace support
+
+Angular Doctor automatically detects multiple projects in your workspace:
+
+- **Angular CLI workspaces** — reads `angular.json` and scans each project inside `projects/`
+- **npm / pnpm workspaces** — detects packages with `@angular/core` from `workspaces` field or `pnpm-workspace.yaml`
+
+When multiple projects are found, Angular Doctor:
+- **Interactive mode**: shows a multi-select prompt to choose which projects to scan
+- **Non-interactive mode** (`-y / --yes`, CI): scans all detected projects automatically
+
+Use `--project <name>` to target a specific project (comma-separated for multiple):
+
+```bash
+npx -y angular-doctor@latest . --project my-app,my-lib
+```
+
 ## Install
 
-Run this at your Angular project root:
+Run this at your Angular project root (or workspace root):
 
 ```bash
 npx -y angular-doctor@latest .
@@ -33,14 +50,15 @@ npx -y angular-doctor@latest . --verbose
 Usage: angular-doctor [directory] [options]
 
 Options:
-  -v, --version     display the version number
-  --no-lint         skip linting
-  --no-dead-code    skip dead code detection
-  --verbose         show file details per rule
-  --score           output only the score
-  -y, --yes         skip prompts
-  --diff [base]     scan only files changed vs base branch
-  -h, --help        display help for command
+  -v, --version         display the version number
+  --no-lint             skip linting
+  --no-dead-code        skip dead code detection
+  --verbose             show file details per rule
+  --score               output only the score
+  -y, --yes             skip prompts, scan all workspace projects
+  --project <name>      select workspace project (comma-separated for multiple)
+  --diff [base]         scan only files changed vs base branch
+  -h, --help            display help for command
 ```
 
 ## Configuration

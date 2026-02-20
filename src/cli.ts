@@ -7,6 +7,7 @@ import { filterSourceFiles, getDiffInfo } from "./utils/get-diff-files.js";
 import { handleError } from "./utils/handle-error.js";
 import { highlighter } from "./utils/highlighter.js";
 import { logger } from "./utils/logger.js";
+import { selectProjects } from "./utils/select-projects.js";
 
 const VERSION = process.env.VERSION ?? "0.0.0";
 
@@ -16,6 +17,7 @@ interface CliFlags {
   verbose: boolean;
   score: boolean;
   yes: boolean;
+  project?: string;
   diff?: boolean | string;
 }
 
@@ -92,7 +94,8 @@ const program = new Command()
   .option("--no-dead-code", "skip dead code detection")
   .option("--verbose", "show file details per rule")
   .option("--score", "output only the score")
-  .option("-y, --yes", "skip prompts")
+  .option("-y, --yes", "skip prompts, scan all workspace projects")
+  .option("--project <name>", "select workspace project (comma-separated for multiple)")
   .option("--diff [base]", "scan only files changed vs base branch")
   .action(async (directory: string, flags: CliFlags) => {
     const isScoreOnly = flags.score;
@@ -109,6 +112,13 @@ const program = new Command()
       const scanOptions = resolveCliScanOptions(flags, userConfig, program);
       const shouldSkipPrompts = flags.yes || isAutomatedEnvironment() || !process.stdin.isTTY;
 
+      // Discover and (optionally) prompt to select workspace projects
+      const projectDirectories = await selectProjects(
+        resolvedDirectory,
+        flags.project,
+        shouldSkipPrompts,
+      );
+
       const isDiffCliOverride = program.getOptionValueSource("diff") === "cli";
       const effectiveDiff = isDiffCliOverride ? flags.diff : userConfig?.diff;
       const explicitBaseBranch = typeof effectiveDiff === "string" ? effectiveDiff : undefined;
@@ -120,38 +130,45 @@ const program = new Command()
         isScoreOnly,
       );
 
-      let includePaths: string[] | undefined;
-      if (isDiffMode && diffInfo) {
-        if (!isScoreOnly) {
-          if (diffInfo.isCurrentChanges) {
-            logger.log("Scanning uncommitted changes");
-          } else {
-            logger.log(
-              `Scanning changes: ${highlighter.info(diffInfo.currentBranch)} → ${highlighter.info(diffInfo.baseBranch)}`,
-            );
+      if (isDiffMode && diffInfo && !isScoreOnly) {
+        if (diffInfo.isCurrentChanges) {
+          logger.log("Scanning uncommitted changes");
+        } else {
+          logger.log(
+            `Scanning changes: ${highlighter.info(diffInfo.currentBranch)} → ${highlighter.info(diffInfo.baseBranch)}`,
+          );
+        }
+        logger.break();
+      }
+
+      for (const projectDirectory of projectDirectories) {
+        let includePaths: string[] | undefined;
+
+        if (isDiffMode) {
+          const projectDiffInfo = getDiffInfo(projectDirectory, explicitBaseBranch);
+          if (projectDiffInfo) {
+            const changedSourceFiles = filterSourceFiles(projectDiffInfo.changedFiles);
+            if (changedSourceFiles.length === 0) {
+              if (!isScoreOnly) {
+                logger.dim(`No changed source files in ${projectDirectory}, skipping.`);
+                logger.break();
+              }
+              continue;
+            }
+            includePaths = changedSourceFiles;
           }
+        }
+
+        if (!isScoreOnly) {
+          logger.dim(`Scanning ${projectDirectory}...`);
           logger.break();
         }
-        const changedSourceFiles = filterSourceFiles(diffInfo.changedFiles);
-        if (changedSourceFiles.length === 0) {
-          if (!isScoreOnly) {
-            logger.dim("No changed source files found, skipping.");
-            logger.break();
-          }
-        } else {
-          includePaths = changedSourceFiles;
+
+        await scan(projectDirectory, { ...scanOptions, includePaths });
+
+        if (!isScoreOnly) {
+          logger.break();
         }
-      }
-
-      if (!isScoreOnly) {
-        logger.dim(`Scanning ${resolvedDirectory}...`);
-        logger.break();
-      }
-
-      await scan(resolvedDirectory, { ...scanOptions, includePaths });
-
-      if (!isScoreOnly) {
-        logger.break();
       }
     } catch (error) {
       handleError(error);

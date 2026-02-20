@@ -86,20 +86,50 @@ const hasAngularDependency = (packageJson: PackageJson): boolean => {
   return Boolean(allDependencies["@angular/core"]);
 };
 
+/**
+ * Walks up the directory tree from `directory` until it finds a `package.json`.
+ * Returns the directory containing the package.json, or null if not found.
+ */
+const findNearestPackageJsonDir = (directory: string): string | null => {
+  let current = directory;
+  while (true) {
+    if (fs.existsSync(path.join(current, "package.json"))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+};
+
 export const discoverProject = (directory: string): ProjectInfo => {
-  const packageJsonPath = path.join(directory, "package.json");
-  if (!fs.existsSync(packageJsonPath)) {
-    throw new Error(`No package.json found in ${directory}`);
+  // First try the given directory, then walk up to find the nearest package.json
+  const packageJsonDir = fs.existsSync(path.join(directory, "package.json"))
+    ? directory
+    : findNearestPackageJsonDir(directory);
+
+  if (!packageJsonDir) {
+    throw new Error(`No package.json found in ${directory} or any parent directory`);
   }
 
-  const packageJson = readPackageJson(packageJsonPath);
+  const packageJson = readPackageJson(path.join(packageJsonDir, "package.json"));
   const allDeps = collectAllDependencies(packageJson);
   const angularVersion = detectAngularVersion(allDeps);
   const framework = detectFramework(allDeps);
-  const hasTypeScript = fs.existsSync(path.join(directory, "tsconfig.json"));
+
+  // tsconfig.json — check the project directory first, then the package.json directory
+  const hasTypeScript =
+    fs.existsSync(path.join(directory, "tsconfig.json")) ||
+    fs.existsSync(path.join(packageJsonDir, "tsconfig.json"));
+
   const hasStandaloneComponents = detectStandaloneComponents(packageJson);
   const sourceFileCount = countSourceFiles(directory);
-  const projectName = packageJson.name ?? path.basename(directory);
+
+  // Use the Angular project name from angular.json if possible, otherwise from package.json
+  const angularJsonPath = path.join(packageJsonDir, "angular.json");
+  let projectName = packageJson.name ?? path.basename(directory);
+  if (packageJsonDir !== directory && fs.existsSync(angularJsonPath)) {
+    // Use the directory name as a more meaningful project name for workspace sub-projects
+    projectName = path.basename(directory);
+  }
 
   return {
     rootDirectory: directory,
@@ -201,6 +231,55 @@ export const listWorkspacePackages = (rootDirectory: string): WorkspacePackage[]
       const name = workspacePackageJson.name ?? path.basename(workspaceDirectory);
       packages.push({ name, directory: workspaceDirectory });
     }
+  }
+
+  return packages;
+};
+
+interface AngularWorkspaceProject {
+  projectType?: string;
+  root?: string;
+}
+
+interface AngularWorkspace {
+  version?: number;
+  projects?: Record<string, AngularWorkspaceProject | string>;
+}
+
+/**
+ * Reads `angular.json` (Angular CLI workspace config) and returns one
+ * WorkspacePackage per project whose root directory contains an Angular dependency.
+ */
+export const listAngularWorkspaceProjects = (rootDirectory: string): WorkspacePackage[] => {
+  const angularJsonPath = path.join(rootDirectory, "angular.json");
+  if (!fs.existsSync(angularJsonPath)) return [];
+
+  let workspace: AngularWorkspace;
+  try {
+    workspace = JSON.parse(fs.readFileSync(angularJsonPath, "utf-8")) as AngularWorkspace;
+  } catch {
+    return [];
+  }
+
+  if (!workspace.projects || typeof workspace.projects !== "object") return [];
+
+  const packages: WorkspacePackage[] = [];
+
+  for (const [name, projectConfig] of Object.entries(workspace.projects)) {
+    // Older angular.json formats store the root as a plain string
+    const root =
+      typeof projectConfig === "string"
+        ? projectConfig
+        : (projectConfig.root ?? "");
+
+    const projectDirectory = root ? path.resolve(rootDirectory, root) : rootDirectory;
+
+    // Only include directories that actually exist
+    if (!fs.existsSync(projectDirectory) || !fs.statSync(projectDirectory).isDirectory()) {
+      continue;
+    }
+
+    packages.push({ name, directory: projectDirectory });
   }
 
   return packages;
