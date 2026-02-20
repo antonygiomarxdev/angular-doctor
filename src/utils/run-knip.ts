@@ -35,8 +35,11 @@ const collectIssueRecords = (
 
   for (const issues of Object.values(records)) {
     for (const issue of Object.values(issues)) {
+      const filePath = path.relative(rootDirectory, issue.filePath);
+      // Skip issues for files outside the rootDirectory scope
+      if (filePath.startsWith("..")) continue;
       diagnostics.push({
-        filePath: path.relative(rootDirectory, issue.filePath),
+        filePath,
         plugin: "knip",
         rule: issueType,
         severity: KNIP_SEVERITY_MAP[issueType] ?? "warning",
@@ -80,6 +83,8 @@ const extractFailedPluginName = (error: unknown): string | null => {
   return match?.[1] ?? null;
 };
 
+const ANGULAR_ENTRY_PATTERNS = ["**/*.module.ts", "**/*.routes.ts"];
+
 const runKnipWithOptions = async (
   knipCwd: string,
   workspaceName?: string,
@@ -93,6 +98,16 @@ const runKnipWithOptions = async (
   );
 
   const parsedConfig = options.parsedConfig as Record<string, unknown>;
+
+  // For Angular projects without user-defined entry patterns, add Angular module
+  // and routes files as entry points. This prevents false positives from
+  // lazy-loaded modules whose import chains cannot be statically traced.
+  if (
+    fs.existsSync(path.join(knipCwd, "angular.json")) &&
+    parsedConfig["entry"] === undefined
+  ) {
+    parsedConfig["entry"] = ANGULAR_ENTRY_PATTERNS;
+  }
 
   for (let attempt = 0; attempt <= MAX_KNIP_RETRIES; attempt++) {
     try {
@@ -114,19 +129,42 @@ const hasNodeModules = (directory: string): boolean => {
   return fs.existsSync(nodeModulesPath) && fs.statSync(nodeModulesPath).isDirectory();
 };
 
+/**
+ * Searches upward from `directory` for an `angular.json` file and returns
+ * the directory that contains it, or `null` if none is found.
+ */
+export const findAngularWorkspaceRoot = (directory: string): string | null => {
+  let current = directory;
+  while (true) {
+    if (fs.existsSync(path.join(current, "angular.json"))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+};
+
 export const runKnip = async (rootDirectory: string): Promise<Diagnostic[]> => {
   if (!hasNodeModules(rootDirectory)) {
     return [];
   }
 
-  const knipResult = await runKnipWithOptions(rootDirectory);
+  // Use the Angular workspace root (where angular.json lives) as the knip cwd
+  // so that the Angular plugin can find its configuration and correctly identify
+  // entry points for the whole workspace.
+  const angularWorkspaceRoot = findAngularWorkspaceRoot(rootDirectory);
+  const knipCwd = angularWorkspaceRoot ?? rootDirectory;
+
+  const knipResult = await runKnipWithOptions(knipCwd);
 
   const { issues } = knipResult;
   const diagnostics: Diagnostic[] = [];
 
   for (const unusedFile of issues.files) {
+    const filePath = path.relative(rootDirectory, unusedFile);
+    // Skip files outside the rootDirectory scope (e.g., from other workspace projects)
+    if (filePath.startsWith("..")) continue;
     diagnostics.push({
-      filePath: path.relative(rootDirectory, unusedFile),
+      filePath,
       plugin: "knip",
       rule: "files",
       severity: KNIP_SEVERITY_MAP["files"],
