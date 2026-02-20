@@ -1,10 +1,10 @@
 {
   "name": "angular-doctor",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": "Antony Giomar <antonygiomarx@gmail.com>",
   "description": "Diagnose and fix issues in your Angular app",
   "repository": {
-    "url": "https://www.npmjs.com/package/angular-doctor"
+    "url": "https://github.com/antonygiomarxdev/angular-doctor"
   },
   "keywords": [
     "angular",
