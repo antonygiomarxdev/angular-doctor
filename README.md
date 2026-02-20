@@ -77,7 +77,7 @@ You can also use the `"angularDoctor"` key in your `package.json`:
 | `lint` | `boolean` | `true` | Enable/disable lint checks |
 | `deadCode` | `boolean` | `true` | Enable/disable dead code detection |
 | `verbose` | `boolean` | `false` | Show file details per rule |
-| `diff` | `boolean \| string` | — | Scan only changed files |
+| `diff` | `boolean | string` | — | Scan only changed files |
 
 ## Node.js API
 

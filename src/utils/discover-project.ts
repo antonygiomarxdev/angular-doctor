@@ -61,7 +61,7 @@ const detectStandaloneComponents = (packageJson: PackageJson): boolean => {
   if (!angularVersion) return false;
   // Angular 14+ supports standalone components (standalone: true flag)
   // Angular 17+ makes standalone the default
-  const majorVersion = parseInt(angularVersion.replace(/[^0-9]/, ""), 10);
+  const majorVersion = parseInt(angularVersion.match(/\d+/)?.[0] ?? "", 10);
   return !isNaN(majorVersion) && majorVersion >= 14;
 };
 
