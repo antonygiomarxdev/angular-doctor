@@ -1,6 +1,7 @@
 {
   "name": "angular-doctor",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha.3",
+  "author": "Antony Giomar <antonygiomarx@gmail.com>",
   "description": "Diagnose and fix issues in your Angular app",
   "keywords": [
     "angular",
@@ -9,26 +10,26 @@
     "performance"
   ],
   "license": "MIT",
-  "bin": {
-    "angular-doctor": "./dist/cli.js"
-  },
+  "bin": "bin/angular-doctor.js",
   "files": [
-    "dist"
+    "dist",
+    "bin"
   ],
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/cli.d.ts",
-      "default": "./dist/cli.js"
+      "types": "./dist/cli.d.mts",
+      "default": "./dist/cli.mjs"
     },
     "./api": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
     }
   },
   "scripts": {
     "dev": "tsdown --watch",
-    "build": "rm -rf dist && tsdown",
+    "build": "rimraf dist && tsdown",
+    "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -45,6 +46,7 @@
   },
   "devDependencies": {
     "@types/prompts": "^2.4.9",
+    "rimraf": "^6.0.1",
     "tsdown": "^0.20.3",
     "vitest": "^4.0.18"
   }
