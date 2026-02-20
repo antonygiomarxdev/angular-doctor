@@ -1,50 +1,66 @@
-# angular-doctor
+# Angular Doctor
 
-Let coding agents diagnose and fix your Angular code.
+Diagnose and improve Angular codebases with a single command.
 
-One command scans your codebase for performance, correctness, architecture, and dead code issues, then outputs a **0–100 score** with actionable diagnostics.
+Angular Doctor scans your project for **Angular-specific lint issues** and **dead code**, then produces a **0–100 health score** plus actionable diagnostics.
 
-## How it works
+---
 
-Angular Doctor detects your Angular version and framework (Angular CLI, Nx, Ionic, AnalogJS, Angular SSR), then runs two analysis passes **in parallel**:
+## ✨ Features
 
-1. **Lint**: Checks Angular-specific rules across components, directives, pipes, performance, architecture, and TypeScript quality.
-2. **Dead code**: Detects unused files, exports, and types using [knip](https://knip.dev).
+- **Angular-aware linting** (components, directives, pipes, performance, architecture, TypeScript)
+- **Dead code detection** (unused files, exports, types) via [knip](https://knip.dev)
+- **Workspace support** (Angular CLI + npm/pnpm workspaces)
+- **Diff mode** to scan only changed files
+- **Markdown reports** for sharing results
 
-Diagnostics are scored by severity to produce a **0–100 health score** (75+ Great, 50–74 Needs work, <50 Critical).
+---
 
-## Workspace support
+## ✅ Quick start
 
-Angular Doctor automatically detects multiple projects in your workspace:
-
-- **Angular CLI workspaces** — reads `angular.json` and scans each project inside `projects/`
-- **npm / pnpm workspaces** — detects packages with `@angular/core` from `workspaces` field or `pnpm-workspace.yaml`
-
-When multiple projects are found, Angular Doctor:
-- **Interactive mode**: shows a multi-select prompt to choose which projects to scan
-- **Non-interactive mode** (`-y / --yes`, CI): scans all detected projects automatically
-
-Use `--project <name>` to target a specific project (comma-separated for multiple):
-
-```bash
-npx -y angular-doctor@latest . --project my-app,my-lib
-```
-
-## Install
-
-Run this at your Angular project root (or workspace root):
+Run at your Angular project root (or workspace root):
 
 ```bash
 npx -y angular-doctor@latest .
 ```
 
-Use `--verbose` to see affected files and line numbers:
+![CLI output](docs/assets/cli-output.png)
+
+Generate a Markdown report in the current directory:
+
+```bash
+npx -y angular-doctor@latest . --report .
+```
+
+Show affected files and line numbers:
 
 ```bash
 npx -y angular-doctor@latest . --verbose
 ```
 
-## Options
+---
+
+## 🧭 Workspace support
+
+Angular Doctor automatically detects multiple projects:
+
+- **Angular CLI workspaces** — reads `angular.json` and scans each project inside `projects/`
+- **npm / pnpm workspaces** — detects packages with `@angular/core` from `workspaces` or `pnpm-workspace.yaml`
+
+When multiple projects are found:
+
+- **Interactive mode**: prompts for which projects to scan
+- **Non-interactive mode** (`-y`, CI): scans all detected projects
+
+Target a specific project (comma-separated for multiple):
+
+```bash
+npx -y angular-doctor@latest . --project my-app,my-lib
+```
+
+---
+
+## ⚙️ CLI Options
 
 ```
 Usage: angular-doctor [directory] [options]
@@ -55,15 +71,30 @@ Options:
   --no-dead-code        skip dead code detection
   --verbose             show file details per rule
   --score               output only the score
+  --report [path]       write a markdown report (optional output path)
+  --fast                speed up by skipping dead code and type-aware lint
   -y, --yes             skip prompts, scan all workspace projects
   --project <name>      select workspace project (comma-separated for multiple)
   --diff [base]         scan only files changed vs base branch
   -h, --help            display help for command
 ```
 
-## Configuration
+---
 
-Create an `angular-doctor.config.json` in your project root to customize behavior:
+## 📝 Reports
+
+Use `--report` to write a Markdown report:
+
+- `--report` writes to the diagnostics temp folder
+- `--report .` writes to the current project directory
+- `--report ./reports` writes to a custom folder
+- `--report ./reports/scan.md` writes to a specific file
+
+---
+
+## 🔧 Configuration
+
+Create an `angular-doctor.config.json` in your project root:
 
 ```json
 {
@@ -74,7 +105,7 @@ Create an `angular-doctor.config.json` in your project root to customize behavio
 }
 ```
 
-You can also use the `"angularDoctor"` key in your `package.json`:
+Or use the `angularDoctor` key in `package.json`:
 
 ```json
 {
@@ -97,7 +128,9 @@ You can also use the `"angularDoctor"` key in your `package.json`:
 | `verbose` | `boolean` | `false` | Show file details per rule |
 | `diff` | `boolean | string` | — | Scan only changed files |
 
-## Node.js API
+---
+
+## 📦 Node.js API
 
 ```typescript
 import { diagnose } from "angular-doctor/api";
@@ -125,9 +158,9 @@ interface Diagnostic {
 }
 ```
 
-## Angular-specific rules
+---
 
-Angular Doctor checks the following categories of issues:
+## 🧪 What it checks
 
 ### Components
 - Missing `Component` / `Directive` class suffixes
@@ -153,10 +186,14 @@ Angular Doctor checks the following categories of issues:
 - Unused files
 - Unused exports and types
 
-## Inspiration
+---
 
-This project is inspired by [react-doctor](https://github.com/millionco/react-doctor) — an equivalent tool for React codebases.
+## 💡 Inspiration
 
-## License
+Inspired by [react-doctor](https://github.com/millionco/react-doctor).
+
+---
+
+## 📄 License
 
 MIT
