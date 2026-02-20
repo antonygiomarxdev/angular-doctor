@@ -53,6 +53,7 @@ export interface ScanOptions {
   deadCode?: boolean;
   verbose?: boolean;
   scoreOnly?: boolean;
+  fast?: boolean;
   report?: boolean | string;
   includePaths?: string[];
 }
@@ -100,6 +101,7 @@ export interface AngularDoctorConfig {
   deadCode?: boolean;
   verbose?: boolean;
   diff?: boolean | string;
+  fast?: boolean;
 }
 
 export interface WorkspacePackage {

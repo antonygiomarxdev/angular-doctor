@@ -18,6 +18,7 @@ interface CliFlags {
   score: boolean;
   yes: boolean;
   report?: boolean | string;
+  fast?: boolean;
   project?: string;
   diff?: boolean | string;
 }
@@ -64,6 +65,9 @@ const resolveCliScanOptions = (
       : (userConfig?.verbose ?? false),
     scoreOnly: flags.score,
     report: flags.report,
+    fast: isCliOverride("fast")
+      ? Boolean(flags.fast)
+      : (userConfig?.fast ?? false),
   };
 };
 
@@ -105,6 +109,7 @@ const program = new Command()
   .option("--verbose", "show file details per rule")
   .option("--score", "output only the score")
   .option("--report [path]", "write a markdown report (optional output path)")
+  .option("--fast", "speed up by skipping dead code and type-aware lint")
   .option("-y, --yes", "skip prompts, scan all workspace projects")
   .option(
     "--project <name>",

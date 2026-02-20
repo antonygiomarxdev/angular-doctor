@@ -60,24 +60,40 @@ const RULE_SEVERITY_MAP: Record<string, "error" | "warning"> = {
 
 // Human-readable messages and help text
 const RULE_MESSAGE_MAP: Record<string, string> = {
-  "@angular-eslint/component-class-suffix": "Component class should end with 'Component'",
-  "@angular-eslint/directive-class-suffix": "Directive class should end with 'Directive'",
+  "@angular-eslint/component-class-suffix":
+    "Component class should end with 'Component'",
+  "@angular-eslint/directive-class-suffix":
+    "Directive class should end with 'Directive'",
   "@angular-eslint/pipe-prefix": "Pipe name should have a consistent prefix",
-  "@angular-eslint/use-pipe-transform-interface": "Pipe class must implement PipeTransform interface",
+  "@angular-eslint/use-pipe-transform-interface":
+    "Pipe class must implement PipeTransform interface",
   "@angular-eslint/no-empty-lifecycle-method": "Remove empty lifecycle methods",
-  "@angular-eslint/use-lifecycle-interface": "Implement the lifecycle interface for lifecycle hooks",
-  "@angular-eslint/consistent-component-styles": "Use consistent styles type in component decorator",
-  "@angular-eslint/prefer-on-push-component-change-detection": "Use OnPush change detection for better performance",
-  "@angular-eslint/no-output-native": "Avoid shadowing native DOM events in output names",
-  "@angular-eslint/no-conflicting-lifecycle": "Lifecycle hooks DoCheck and OnChanges cannot be used together",
-  "@angular-eslint/contextual-lifecycle": "Lifecycle hook is not available in this context",
-  "@angular-eslint/no-forward-ref": "Avoid using forwardRef — restructure to avoid circular dependency",
-  "@angular-eslint/no-input-rename": "Avoid renaming directive inputs — use the property name as the binding name",
-  "@angular-eslint/no-output-rename": "Avoid renaming directive outputs — use the property name as the binding name",
-  "@angular-eslint/no-inputs-metadata-property": "Use @Input() decorator instead of inputs metadata property",
-  "@angular-eslint/no-outputs-metadata-property": "Use @Output() decorator instead of outputs metadata property",
-  "@angular-eslint/prefer-standalone": "Prefer standalone components over NgModule-based components",
-  "@typescript-eslint/no-explicit-any": "Avoid 'any' type — use specific types for better type safety",
+  "@angular-eslint/use-lifecycle-interface":
+    "Implement the lifecycle interface for lifecycle hooks",
+  "@angular-eslint/consistent-component-styles":
+    "Use consistent styles type in component decorator",
+  "@angular-eslint/prefer-on-push-component-change-detection":
+    "Use OnPush change detection for better performance",
+  "@angular-eslint/no-output-native":
+    "Avoid shadowing native DOM events in output names",
+  "@angular-eslint/no-conflicting-lifecycle":
+    "Lifecycle hooks DoCheck and OnChanges cannot be used together",
+  "@angular-eslint/contextual-lifecycle":
+    "Lifecycle hook is not available in this context",
+  "@angular-eslint/no-forward-ref":
+    "Avoid using forwardRef — restructure to avoid circular dependency",
+  "@angular-eslint/no-input-rename":
+    "Avoid renaming directive inputs — use the property name as the binding name",
+  "@angular-eslint/no-output-rename":
+    "Avoid renaming directive outputs — use the property name as the binding name",
+  "@angular-eslint/no-inputs-metadata-property":
+    "Use @Input() decorator instead of inputs metadata property",
+  "@angular-eslint/no-outputs-metadata-property":
+    "Use @Output() decorator instead of outputs metadata property",
+  "@angular-eslint/prefer-standalone":
+    "Prefer standalone components over NgModule-based components",
+  "@typescript-eslint/no-explicit-any":
+    "Avoid 'any' type — use specific types for better type safety",
   "@typescript-eslint/no-unused-vars": "Remove unused variable declaration",
 };
 
@@ -117,13 +133,16 @@ const RULE_HELP_MAP: Record<string, string> = {
 const buildEslintConfig = (
   hasTypeScript: boolean,
   tsconfigPath: string | null,
+  useTypeAware: boolean,
 ): Linter.Config[] => {
   const languageOptions: Linter.Config["languageOptions"] = {
     parser: tsEslint.parser as Linter.Parser,
     parserOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
-      ...(hasTypeScript && tsconfigPath ? { project: tsconfigPath } : {}),
+      ...(hasTypeScript && tsconfigPath && useTypeAware
+        ? { project: tsconfigPath }
+        : {}),
     },
   };
 
@@ -164,7 +183,10 @@ const buildEslintConfig = (
   ];
 };
 
-const mapEslintSeverity = (severity: number, ruleId: string | null): "error" | "warning" => {
+const mapEslintSeverity = (
+  severity: number,
+  ruleId: string | null,
+): "error" | "warning" => {
   if (ruleId && RULE_SEVERITY_MAP[ruleId]) {
     return RULE_SEVERITY_MAP[ruleId];
   }
@@ -179,7 +201,9 @@ const resolveMessage = (ruleId: string, defaultMessage: string): string =>
 
 const resolveHelp = (ruleId: string): string => RULE_HELP_MAP[ruleId] ?? "";
 
-const parsePluginAndRule = (ruleId: string): { plugin: string; rule: string } => {
+const parsePluginAndRule = (
+  ruleId: string,
+): { plugin: string; rule: string } => {
   // e.g. "@angular-eslint/component-class-suffix" -> plugin: "@angular-eslint", rule: "component-class-suffix"
   // e.g. "@typescript-eslint/no-explicit-any" -> plugin: "@typescript-eslint", rule: "no-explicit-any"
   const match = ruleId.match(/^(@[^/]+\/[^/]+|[^/]+)\/(.+)$/);
@@ -193,6 +217,7 @@ export const runEslint = async (
   rootDirectory: string,
   hasTypeScript: boolean,
   includePaths?: string[],
+  options?: { useTypeAware?: boolean },
 ): Promise<Diagnostic[]> => {
   if (includePaths !== undefined && includePaths.length === 0) {
     return [];
@@ -202,14 +227,24 @@ export const runEslint = async (
     ? path.join(rootDirectory, "tsconfig.json")
     : null;
 
+  const cacheRoot = path.join(
+    rootDirectory,
+    "node_modules",
+    ".cache",
+    "angular-doctor",
+  );
+  fs.mkdirSync(cacheRoot, { recursive: true });
   const eslint = new ESLint({
     cwd: rootDirectory,
-    overrideConfigFile: true,
+    overrideConfigFile: null,
     overrideConfig: buildEslintConfig(
       hasTypeScript,
       tsconfigPath && fs.existsSync(tsconfigPath) ? tsconfigPath : null,
+      options?.useTypeAware ?? true,
     ),
     ignore: true,
+    cache: true,
+    cacheLocation: path.join(cacheRoot, ".eslintcache"),
   });
 
   const patterns = includePaths ?? ["**/*.ts"];

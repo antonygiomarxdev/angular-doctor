@@ -490,20 +490,28 @@ interface ResolvedScanOptions {
   verbose: boolean;
   scoreOnly: boolean;
   report: boolean | string | undefined;
+  useTypeAwareLint: boolean;
   includePaths: string[];
 }
 
 const mergeScanOptions = (
   inputOptions: ScanOptions,
   userConfig: AngularDoctorConfig | null,
-): ResolvedScanOptions => ({
-  lint: inputOptions.lint ?? userConfig?.lint ?? true,
-  deadCode: inputOptions.deadCode ?? userConfig?.deadCode ?? true,
-  verbose: inputOptions.verbose ?? userConfig?.verbose ?? false,
-  scoreOnly: inputOptions.scoreOnly ?? false,
-  report: inputOptions.report ?? false,
-  includePaths: inputOptions.includePaths ?? [],
-});
+): ResolvedScanOptions => {
+  const fastMode = inputOptions.fast ?? userConfig?.fast ?? false;
+
+  return {
+    lint: inputOptions.lint ?? userConfig?.lint ?? true,
+    deadCode: fastMode
+      ? false
+      : (inputOptions.deadCode ?? userConfig?.deadCode ?? true),
+    verbose: inputOptions.verbose ?? userConfig?.verbose ?? false,
+    scoreOnly: inputOptions.scoreOnly ?? false,
+    report: inputOptions.report ?? false,
+    useTypeAwareLint: !fastMode,
+    includePaths: inputOptions.includePaths ?? [],
+  };
+};
 
 const printProjectDetection = (
   projectInfo: ProjectInfo,
@@ -570,53 +578,50 @@ export const scan = async (
   let didLintFail = false;
   let didDeadCodeFail = false;
 
-  const lintPromise = options.lint
-    ? (async () => {
-        const lintSpinner = options.scoreOnly
-          ? null
-          : spinner("Running lint checks...").start();
-        try {
-          const lintDiagnostics = await runEslint(
-            directory,
-            projectInfo.hasTypeScript,
-            computedIncludePaths,
-          );
-          lintSpinner?.succeed("Running lint checks.");
-          return lintDiagnostics;
-        } catch (error) {
-          didLintFail = true;
-          lintSpinner?.fail("Lint checks failed (non-fatal, skipping).");
-          logger.error(String(error));
-          return [];
-        }
-      })()
-    : Promise.resolve<Diagnostic[]>([]);
+  const runLint = async (): Promise<Diagnostic[]> => {
+    if (!options.lint) return [];
+    const lintSpinner = options.scoreOnly
+      ? null
+      : spinner("Running lint checks...").start();
+    try {
+      const lintDiagnostics = await runEslint(
+        directory,
+        projectInfo.hasTypeScript,
+        computedIncludePaths,
+        { useTypeAware: options.useTypeAwareLint },
+      );
+      lintSpinner?.succeed("Running lint checks.");
+      return lintDiagnostics;
+    } catch (error) {
+      didLintFail = true;
+      lintSpinner?.fail("Lint checks failed (non-fatal, skipping).");
+      logger.error(String(error));
+      return [];
+    }
+  };
 
-  const deadCodePromise =
-    options.deadCode && !isDiffMode
-      ? (async () => {
-          const deadCodeSpinner = options.scoreOnly
-            ? null
-            : spinner("Detecting dead code...").start();
-          try {
-            const knipDiagnostics = await runKnip(directory);
-            deadCodeSpinner?.succeed("Detecting dead code.");
-            return knipDiagnostics;
-          } catch (error) {
-            didDeadCodeFail = true;
-            deadCodeSpinner?.fail(
-              "Dead code detection failed (non-fatal, skipping).",
-            );
-            logger.error(String(error));
-            return [];
-          }
-        })()
-      : Promise.resolve<Diagnostic[]>([]);
+  const runDeadCode = async (): Promise<Diagnostic[]> => {
+    if (!options.deadCode || isDiffMode) return [];
+    const deadCodeSpinner = options.scoreOnly
+      ? null
+      : spinner("Detecting dead code...").start();
+    try {
+      const knipDiagnostics = await runKnip(directory);
+      deadCodeSpinner?.succeed("Detecting dead code.");
+      return knipDiagnostics;
+    } catch (error) {
+      didDeadCodeFail = true;
+      deadCodeSpinner?.fail(
+        "Dead code detection failed (non-fatal, skipping).",
+      );
+      logger.error(String(error));
+      return [];
+    }
+  };
 
-  const [lintDiagnostics, deadCodeDiagnostics] = await Promise.all([
-    lintPromise,
-    deadCodePromise,
-  ]);
+  const [lintDiagnostics, deadCodeDiagnostics] = options.scoreOnly
+    ? await Promise.all([runLint(), runDeadCode()])
+    : [await runLint(), await runDeadCode()];
   const diagnostics = combineDiagnostics(
     lintDiagnostics,
     deadCodeDiagnostics,
