@@ -1,0 +1,81 @@
+import path from "node:path";
+import { performance } from "node:perf_hooks";
+import type { AngularDoctorConfig, Diagnostic, DiffInfo, ProjectInfo, ScoreResult } from "./types.js";
+import { calculateScore } from "./utils/calculate-score.js";
+import { combineDiagnostics, computeIncludePaths } from "./utils/combine-diagnostics.js";
+import { discoverProject } from "./utils/discover-project.js";
+import { loadConfig } from "./utils/load-config.js";
+import { runEslint } from "./utils/run-eslint.js";
+import { runKnip } from "./utils/run-knip.js";
+
+export type { Diagnostic, DiffInfo, ProjectInfo, AngularDoctorConfig, ScoreResult };
+export { getDiffInfo, filterSourceFiles } from "./utils/get-diff-files.js";
+
+export interface DiagnoseOptions {
+  lint?: boolean;
+  deadCode?: boolean;
+  includePaths?: string[];
+}
+
+export interface DiagnoseResult {
+  diagnostics: Diagnostic[];
+  score: ScoreResult;
+  project: ProjectInfo;
+  elapsedMilliseconds: number;
+}
+
+export const diagnose = async (
+  directory: string,
+  options: DiagnoseOptions = {},
+): Promise<DiagnoseResult> => {
+  const { includePaths = [] } = options;
+  const isDiffMode = includePaths.length > 0;
+
+  const startTime = performance.now();
+  const resolvedDirectory = path.resolve(directory);
+  const projectInfo = discoverProject(resolvedDirectory);
+  const userConfig = loadConfig(resolvedDirectory);
+
+  const effectiveLint = options.lint ?? userConfig?.lint ?? true;
+  const effectiveDeadCode = options.deadCode ?? userConfig?.deadCode ?? true;
+
+  if (!projectInfo.angularVersion) {
+    throw new Error("No Angular dependency found in package.json");
+  }
+
+  const computedIncludePaths = computeIncludePaths(includePaths);
+
+  const emptyDiagnostics: Diagnostic[] = [];
+
+  const lintPromise = effectiveLint
+    ? runEslint(
+        resolvedDirectory,
+        projectInfo.hasTypeScript,
+        computedIncludePaths,
+      ).catch((error: unknown) => {
+        console.error("Lint failed:", error);
+        return emptyDiagnostics;
+      })
+    : Promise.resolve(emptyDiagnostics);
+
+  const deadCodePromise =
+    effectiveDeadCode && !isDiffMode
+      ? runKnip(resolvedDirectory).catch((error: unknown) => {
+          console.error("Dead code analysis failed:", error);
+          return emptyDiagnostics;
+        })
+      : Promise.resolve(emptyDiagnostics);
+
+  const [lintDiagnostics, deadCodeDiagnostics] = await Promise.all([lintPromise, deadCodePromise]);
+  const diagnostics = combineDiagnostics(lintDiagnostics, deadCodeDiagnostics, userConfig);
+
+  const elapsedMilliseconds = performance.now() - startTime;
+  const score = calculateScore(diagnostics);
+
+  return {
+    diagnostics,
+    score,
+    project: projectInfo,
+    elapsedMilliseconds,
+  };
+};

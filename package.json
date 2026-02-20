@@ -1,0 +1,51 @@
+{
+  "name": "angular-doctor",
+  "version": "0.1.0",
+  "description": "Diagnose and fix issues in your Angular app",
+  "keywords": [
+    "angular",
+    "diagnostics",
+    "linter",
+    "performance"
+  ],
+  "license": "MIT",
+  "bin": {
+    "angular-doctor": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/cli.d.ts",
+      "default": "./dist/cli.js"
+    },
+    "./api": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "tsdown --watch",
+    "build": "rm -rf dist && tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@angular-eslint/eslint-plugin": "^21.2.0",
+    "commander": "^14.0.3",
+    "eslint": "^9.39.2",
+    "knip": "^5.84.1",
+    "ora": "^9.3.0",
+    "picocolors": "^1.1.1",
+    "prompts": "^2.4.2",
+    "typescript": ">=5.0.4 <6",
+    "typescript-eslint": "^8.56.0"
+  },
+  "devDependencies": {
+    "@types/prompts": "^2.4.9",
+    "tsdown": "^0.20.3",
+    "vitest": "^4.0.18"
+  }
+}
