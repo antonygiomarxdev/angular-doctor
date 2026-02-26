@@ -16,7 +16,9 @@
   "bin": "bin/angular-doctor.js",
   "files": [
     "dist",
-    "bin"
+    "bin",
+    "skills",
+    "install-skill.sh"
   ],
   "type": "module",
   "exports": {

@@ -40,6 +40,26 @@ npx -y angular-doctor@latest . --verbose
 
 ---
 
+## 🤖 Install for your coding agent
+
+Teach your coding agent to run Angular Doctor automatically after every Angular change:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/antonygiomarxdev/angular-doctor/main/install-skill.sh | bash
+```
+
+Supports **Cursor**, **Claude Code**, **Windsurf**, **Amp Code**, **Codex**, **Gemini CLI**, and **OpenCode**.
+
+Once installed, your agent will automatically run:
+
+```bash
+npx -y angular-doctor@latest . --verbose --diff
+```
+
+…after making Angular changes, catching issues before they reach review.
+
+---
+
 ## 🧭 Workspace support
 
 Angular Doctor automatically detects multiple projects:
