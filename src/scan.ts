@@ -82,6 +82,119 @@ const buildFileLineMap = (diagnostics: Diagnostic[]): Map<string, number[]> => {
   return fileLines;
 };
 
+/**
+ * Format a severity label with color and indicator
+ */
+const formatSeverityLabel = (severity: Diagnostic["severity"]): string => {
+  const label = severity.toUpperCase();
+  return colorizeBySeverity(`[${label}]`, severity);
+};
+
+/**
+ * Format file:line:column location string
+ */
+const formatLocation = (diagnostic: Diagnostic): string => {
+  const { filePath, line, column } = diagnostic;
+  const colSuffix = column > 0 ? `:${column}` : "";
+  return `${filePath}:${line}${colSuffix}`;
+};
+
+/**
+ * Print a single diagnostic with full details (file:line:column, severity, rule)
+ */
+const printDiagnosticItem = (
+  diagnostic: Diagnostic,
+  showLocation: boolean,
+): void => {
+  const severityIcon =
+    diagnostic.severity === "error" ? highlighter.error("✗") : highlighter.warn("⚠");
+  const severityLabel = formatSeverityLabel(diagnostic.severity);
+  const ruleName = highlighter.info(`${diagnostic.plugin}/${diagnostic.rule}`);
+
+  // Build the diagnostic line
+  let line = `  ${severityIcon} ${severityLabel} ${diagnostic.message}`;
+  logger.log(line);
+
+  // Show location if enabled (verbose mode or diagnostic has specific location)
+  if (showLocation) {
+    const location = formatLocation(diagnostic);
+    logger.dim(`    at ${location}`);
+  }
+
+  // Show rule name
+  logger.dim(`    rule: ${ruleName}`);
+
+  // Show help text if available
+  if (diagnostic.help) {
+    logger.dim(indentMultilineText(diagnostic.help, "    "));
+  }
+};
+
+/**
+ * Print summary breakdown showing:
+ * - Count by severity
+ * - Count by category
+ * - Top rules by frequency
+ */
+const printSummaryBreakdown = (diagnostics: Diagnostic[]): void => {
+  const errorCount = diagnostics.filter((d) => d.severity === "error").length;
+  const warningCount = diagnostics.filter((d) => d.severity === "warning").length;
+
+  // Count by category
+  const categoryGroups = groupBy(diagnostics, (d) => d.category);
+  const sortedCategories = [...categoryGroups.entries()].sort(
+    ([, a], [, b]) => b.length - a.length,
+  );
+
+  // Count by rule (top 5)
+  const ruleGroups = groupBy(
+    diagnostics,
+    (d) => `${d.plugin}/${d.rule}`,
+  );
+  const sortedRules = [...ruleGroups.entries()]
+    .sort(([, a], [, b]) => b.length - a.length)
+    .slice(0, 5);
+
+  // Print severity breakdown
+  logger.break();
+  logger.log("  Summary Breakdown");
+  logger.log("  ─────────────────");
+
+  const severityParts: string[] = [];
+  if (errorCount > 0) {
+    severityParts.push(highlighter.error(`✗ ${errorCount} error${errorCount === 1 ? "" : "s"}`));
+  }
+  if (warningCount > 0) {
+    severityParts.push(highlighter.warn(`⚠ ${warningCount} warning${warningCount === 1 ? "" : "s"}`));
+  }
+  if (severityParts.length > 0) {
+    logger.log(`  ${severityParts.join(", ")}`);
+    logger.break();
+  }
+
+  // Print category breakdown
+  if (sortedCategories.length > 0) {
+    logger.dim("  Categories:");
+    for (const [category, categoryDiags] of sortedCategories) {
+      const count = categoryDiags.length;
+      logger.dim(`    ${category}: ${count}`);
+    }
+    logger.break();
+  }
+
+  // Print top rules
+  if (sortedRules.length > 0) {
+    logger.dim("  Top rules:");
+    for (const [rule, ruleDiags] of sortedRules) {
+      const count = ruleDiags.length;
+      const firstDiag = ruleDiags[0];
+      const severity = firstDiag.severity === "error" ? highlighter.error("✗") : highlighter.warn("⚠");
+      logger.dim(`    ${severity} ${rule}: ${count}`);
+    }
+    logger.break();
+  }
+};
+
 const printDiagnostics = (
   diagnostics: Diagnostic[],
   isVerbose: boolean,
@@ -106,7 +219,7 @@ const printDiagnostics = (
     logger.error(`  ${errorGroups.length} error${errorGroups.length === 1 ? "" : "s"}:`);
   }
 
-  for (const [, ruleDiagnostics] of errorGroups) {
+  for (const [ruleKey, ruleDiagnostics] of errorGroups) {
     const firstDiagnostic = ruleDiagnostics[0];
     const severitySymbol = "✗";
     const icon = colorizeBySeverity(severitySymbol, firstDiagnostic.severity);
@@ -118,26 +231,20 @@ const printDiagnostics = (
       logger.dim(indentMultilineText(firstDiagnostic.help, "    "));
     }
 
+    // Always show file:line:column for each individual diagnostic in verbose mode
     if (isVerbose) {
-      const fileLines = buildFileLineMap(ruleDiagnostics);
+      // Show category and rule info
+      logger.dim(`    ${highlighter.info("category:")} ${firstDiagnostic.category}`);
+      logger.dim(`    ${highlighter.info("rule:")} ${ruleKey}`);
 
-      for (const [filePath, lines] of fileLines) {
-        // Show file:line:column format in verbose mode
-        if (lines.length > 0) {
-          const locationLabel = lines
-            .slice(0, 5) // Limit to first 5 occurrences
-            .map((line) => {
-              const col = firstDiagnostic.column > 0 ? `:${firstDiagnostic.column}` : "";
-              return `${line}${col}`;
-            })
-            .join(", ");
-          logger.dim(`    ${filePath}: ${locationLabel}`);
-          if (lines.length > 5) {
-            logger.dim(`    ... and ${lines.length - 5} more locations`);
-          }
-        } else {
-          logger.dim(`    ${filePath}`);
-        }
+      // Show each individual diagnostic location
+      for (const diagnostic of ruleDiagnostics) {
+        const location = formatLocation(diagnostic);
+        logger.dim(`    at ${location}`);
+      }
+
+      if (ruleDiagnostics.length > 5) {
+        logger.dim(`    ... and ${ruleDiagnostics.length - 5} more occurrences`);
       }
     }
 
@@ -149,7 +256,7 @@ const printDiagnostics = (
     logger.warn(`  ${warningGroups.length} warning${warningGroups.length === 1 ? "" : "s"}:`);
   }
 
-  for (const [, ruleDiagnostics] of warningGroups) {
+  for (const [ruleKey, ruleDiagnostics] of warningGroups) {
     const firstDiagnostic = ruleDiagnostics[0];
     const severitySymbol = "⚠";
     const icon = colorizeBySeverity(severitySymbol, firstDiagnostic.severity);
@@ -161,30 +268,29 @@ const printDiagnostics = (
       logger.dim(indentMultilineText(firstDiagnostic.help, "    "));
     }
 
+    // Always show file:line:column for each individual diagnostic in verbose mode
     if (isVerbose) {
-      const fileLines = buildFileLineMap(ruleDiagnostics);
+      // Show category and rule info
+      logger.dim(`    ${highlighter.info("category:")} ${firstDiagnostic.category}`);
+      logger.dim(`    ${highlighter.info("rule:")} ${ruleKey}`);
 
-      for (const [filePath, lines] of fileLines) {
-        // Show file:line:column format in verbose mode
-        if (lines.length > 0) {
-          const locationLabel = lines
-            .slice(0, 5) // Limit to first 5 occurrences
-            .map((line) => {
-              const col = firstDiagnostic.column > 0 ? `:${firstDiagnostic.column}` : "";
-              return `${line}${col}`;
-            })
-            .join(", ");
-          logger.dim(`    ${filePath}: ${locationLabel}`);
-          if (lines.length > 5) {
-            logger.dim(`    ... and ${lines.length - 5} more locations`);
-          }
-        } else {
-          logger.dim(`    ${filePath}`);
-        }
+      // Show each individual diagnostic location
+      for (const diagnostic of ruleDiagnostics) {
+        const location = formatLocation(diagnostic);
+        logger.dim(`    at ${location}`);
+      }
+
+      if (ruleDiagnostics.length > 5) {
+        logger.dim(`    ... and ${ruleDiagnostics.length - 5} more occurrences`);
       }
     }
 
     logger.break();
+  }
+
+  // Print summary breakdown in verbose mode
+  if (isVerbose && diagnostics.length > 0) {
+    printSummaryBreakdown(diagnostics);
   }
 };
 
