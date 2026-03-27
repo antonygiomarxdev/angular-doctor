@@ -217,6 +217,7 @@ const printDiagnostics = (
   // Print errors section header if there are errors
   if (errorGroups.length > 0) {
     logger.error(`  ${errorGroups.length} error${errorGroups.length === 1 ? "" : "s"}:`);
+    logger.log(highlighter.error("  ─────────────────────────────────────────"));
   }
 
   for (const [ruleKey, ruleDiagnostics] of errorGroups) {
@@ -226,7 +227,10 @@ const printDiagnostics = (
     const count = ruleDiagnostics.length;
     const countLabel = count > 1 ? colorizeBySeverity(` (${count})`, firstDiagnostic.severity) : "";
 
-    logger.log(`  ${icon} ${firstDiagnostic.message}${countLabel}`);
+    // Print rule separator line
+    logger.log("  ┌────────────────────────────────────────────────");
+
+    logger.log(`  │ ${icon} ${firstDiagnostic.message}${countLabel}`);
     if (firstDiagnostic.help) {
       logger.dim(indentMultilineText(firstDiagnostic.help, "    "));
     }
@@ -248,12 +252,17 @@ const printDiagnostics = (
       }
     }
 
+    logger.log("  └────────────────────────────────────────────────");
     logger.break();
   }
 
   // Print warnings section header if there are warnings
   if (warningGroups.length > 0) {
+    if (errorGroups.length > 0) {
+      logger.break(); // Extra separation between errors and warnings
+    }
     logger.warn(`  ${warningGroups.length} warning${warningGroups.length === 1 ? "" : "s"}:`);
+    logger.log(highlighter.warn("  ─────────────────────────────────────────"));
   }
 
   for (const [ruleKey, ruleDiagnostics] of warningGroups) {
@@ -263,7 +272,10 @@ const printDiagnostics = (
     const count = ruleDiagnostics.length;
     const countLabel = count > 1 ? colorizeBySeverity(` (${count})`, firstDiagnostic.severity) : "";
 
-    logger.log(`  ${icon} ${firstDiagnostic.message}${countLabel}`);
+    // Print rule separator line
+    logger.log("  ┌────────────────────────────────────────────────");
+
+    logger.log(`  │ ${icon} ${firstDiagnostic.message}${countLabel}`);
     if (firstDiagnostic.help) {
       logger.dim(indentMultilineText(firstDiagnostic.help, "    "));
     }
@@ -285,6 +297,7 @@ const printDiagnostics = (
       }
     }
 
+    logger.log("  └────────────────────────────────────────────────");
     logger.break();
   }
 
