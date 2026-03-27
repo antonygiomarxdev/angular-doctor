@@ -17,6 +17,7 @@ interface CliFlags {
   verbose: boolean;
   score: boolean;
   yes: boolean;
+  exitCode: boolean;
   report?: boolean | string;
   fast?: boolean;
   project?: string;
@@ -122,6 +123,10 @@ const program = new Command()
     "--rules <categories>",
     "force-enable specific rule categories (signals,ngrx,material) or 'all'",
   )
+  .option(
+    "--exit-code",
+    "exit with non-zero code when ESLint errors are found (for CI integration)",
+  )
   .action(async (directory: string, flags: CliFlags) => {
     const isScoreOnly = flags.score;
 
@@ -198,7 +203,13 @@ const program = new Command()
           logger.break();
         }
 
-        await scan(projectDirectory, { ...scanOptions, includePaths });
+        const scanResult = await scan(projectDirectory, { ...scanOptions, includePaths });
+
+        // Set exit code based on error count if --exit-code flag is set or in CI
+        const shouldSetExitCode = flags.exitCode || isAutomatedEnvironment();
+        if (shouldSetExitCode && scanResult.errorCount > 0) {
+          process.exitCode = 1;
+        }
 
         if (!isScoreOnly) {
           logger.break();
