@@ -54,9 +54,9 @@ export const diagnose = async (
         computedIncludePaths,
       ).catch((error: unknown) => {
         console.error("Lint failed:", error);
-        return emptyDiagnostics;
+        return { diagnostics: emptyDiagnostics, errors: [] };
       })
-    : Promise.resolve(emptyDiagnostics);
+    : Promise.resolve({ diagnostics: emptyDiagnostics, errors: [] });
 
   const deadCodePromise =
     effectiveDeadCode && !isDiffMode
@@ -66,7 +66,8 @@ export const diagnose = async (
         })
       : Promise.resolve(emptyDiagnostics);
 
-  const [lintDiagnostics, deadCodeDiagnostics] = await Promise.all([lintPromise, deadCodePromise]);
+  const [lintResult, deadCodeDiagnostics] = await Promise.all([lintPromise, deadCodePromise]);
+  const lintDiagnostics = lintResult.diagnostics;
   const diagnostics = combineDiagnostics(lintDiagnostics, deadCodeDiagnostics, userConfig);
 
   const elapsedMilliseconds = performance.now() - startTime;

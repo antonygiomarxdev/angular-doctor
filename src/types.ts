@@ -50,6 +50,8 @@ export interface ScanResult {
   diagnostics: Diagnostic[];
   scoreResult: ScoreResult | null;
   skippedChecks: string[];
+  errorCount: number;
+  warningCount: number;
 }
 
 export interface ScanOptions {
