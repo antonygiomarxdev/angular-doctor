@@ -123,6 +123,96 @@ describe("discoverProject", () => {
     expect(info.rootDirectory).toBe(projectDir);
     fs.rmSync(rootDir, { recursive: true });
   });
+
+  it("detects Angular major version from @angular/core", () => {
+    const dir = createTempProject({
+      dependencies: { "@angular/core": "^17.0.0" },
+    });
+    const info = discoverProject(dir);
+    expect(info.angularMajorVersion).toBe(17);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("returns null for angularMajorVersion when @angular/core missing", () => {
+    const dir = createTempProject({
+      dependencies: { react: "^18.0.0" },
+    });
+    const info = discoverProject(dir);
+    expect(info.angularMajorVersion).toBeNull();
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("detects hasSignals as true for Angular 17+", () => {
+    const dir = createTempProject({
+      dependencies: { "@angular/core": "^17.0.0" },
+    });
+    const info = discoverProject(dir);
+    expect(info.hasSignals).toBe(true);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("detects hasSignals as false for Angular 16", () => {
+    const dir = createTempProject({
+      dependencies: { "@angular/core": "^16.0.0" },
+    });
+    const info = discoverProject(dir);
+    expect(info.hasSignals).toBe(false);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("detects hasSignals as false for Angular 14", () => {
+    const dir = createTempProject({
+      dependencies: { "@angular/core": "^14.0.0" },
+    });
+    const info = discoverProject(dir);
+    expect(info.hasSignals).toBe(false);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("detects hasNgRx when @ngrx/store is present", () => {
+    const dir = createTempProject({
+      dependencies: { "@angular/core": "^17.0.0", "@ngrx/store": "^17.0.0" },
+    });
+    const info = discoverProject(dir);
+    expect(info.hasNgRx).toBe(true);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("detects hasNgRx when @ngrx/effects is present", () => {
+    const dir = createTempProject({
+      dependencies: { "@angular/core": "^17.0.0", "@ngrx/effects": "^17.0.0" },
+    });
+    const info = discoverProject(dir);
+    expect(info.hasNgRx).toBe(true);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("detects hasNgRx as false when no @ngrx packages", () => {
+    const dir = createTempProject({
+      dependencies: { "@angular/core": "^17.0.0" },
+    });
+    const info = discoverProject(dir);
+    expect(info.hasNgRx).toBe(false);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("detects hasAngularMaterial when @angular/material is present", () => {
+    const dir = createTempProject({
+      dependencies: { "@angular/core": "^17.0.0", "@angular/material": "^17.0.0" },
+    });
+    const info = discoverProject(dir);
+    expect(info.hasAngularMaterial).toBe(true);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("detects hasAngularMaterial as false when no @angular/material", () => {
+    const dir = createTempProject({
+      dependencies: { "@angular/core": "^17.0.0" },
+    });
+    const info = discoverProject(dir);
+    expect(info.hasAngularMaterial).toBe(false);
+    fs.rmSync(dir, { recursive: true });
+  });
 });
 
 describe("formatFrameworkName", () => {
