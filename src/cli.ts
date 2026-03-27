@@ -118,7 +118,10 @@ const program = new Command()
     "--project <name>",
     "select workspace project (comma-separated for multiple)",
   )
-  .option("--diff [base]", "scan only files changed vs base branch")
+  .option(
+    "--diff [base]",
+    "scan only files changed vs base branch (Note: dead code detection is skipped in diff mode)",
+  )
   .option(
     "--rules <categories>",
     "force-enable specific rule categories (signals,ngrx,material) or 'all'",
@@ -170,6 +173,9 @@ const program = new Command()
             `Scanning changes: ${highlighter.info(diffInfo.currentBranch)} → ${highlighter.info(diffInfo.baseBranch)}`,
           );
         }
+        logger.warn(
+          "Note: Dead code detection skipped in diff mode. Run without --diff for full scan.",
+        );
         logger.break();
       }
 
