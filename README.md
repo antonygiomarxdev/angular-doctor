@@ -60,6 +60,116 @@ npx -y angular-doctor@latest . --verbose --diff
 
 ---
 
+## 🚀 GitHub Actions CI
+
+Integrate Angular Doctor into your GitHub CI pipeline to post PR comments with health scores and enforce quality gates.
+
+### Basic Setup
+
+```yaml
+name: Angular Doctor
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  angular-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Angular Doctor
+        uses: antonygiomarxdev/angular-doctor@v1.2.0
+        with:
+          directory: .
+          verbose: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### With Score Gating
+
+Fail the CI build when the score falls below a threshold:
+
+```yaml
+name: Angular Doctor
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  angular-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Angular Doctor
+        id: angular-doctor
+        uses: antonygiomarxdev/angular-doctor@v1.2.0
+        with:
+          directory: .
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          score-threshold: 75  # Fail if score < 75
+
+      - name: Use score output
+        run: echo "Score: ${{ steps.angular-doctor.outputs.score }}"
+```
+
+### Diff Mode for PRs
+
+Scan only changed files vs the main branch:
+
+```yaml
+name: Angular Doctor
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  angular-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for diff mode
+
+      - name: Run Angular Doctor
+        uses: antonygiomarxdev/angular-doctor@v1.2.0
+        with:
+          directory: .
+          diff: main  # Compare against main branch
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### Action Inputs
+
+| Input | Description | Default |
+|-------|-------------|---------|
+| `directory` | Project directory to scan | `.` |
+| `verbose` | Show file details per rule | `true` |
+| `project` | Workspace project(s) to scan (comma-separated) | — |
+| `diff` | Base branch for diff mode | — |
+| `github-token` | GitHub token for posting PR comments | — |
+| `score-threshold` | Exit with error code when score is below threshold | `0` |
+| `node-version` | Node.js version to use | `20` |
+
+### Action Outputs
+
+| Output | Description |
+|--------|-------------|
+| `score` | Health score (0-100) |
+| `label` | Score label (Great, Needs work, Critical) |
+
+### PR Comment Example
+
+When `github-token` is provided on pull request events, Angular Doctor posts a comment like:
+
+![PR Comment](docs/assets/pr-comment.png)
+
+---
+
 ## 🧭 Workspace support
 
 Angular Doctor automatically detects multiple projects:
