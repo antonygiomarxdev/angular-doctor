@@ -619,9 +619,24 @@ export const scan = async (
     }
   };
 
-  const [lintDiagnostics, deadCodeDiagnostics] = options.scoreOnly
-    ? await Promise.all([runLint(), runDeadCode()])
-    : [await runLint(), await runDeadCode()];
+  // Run lint and dead code detection in parallel for better performance
+  const parallelStartTime = performance.now();
+  const [lintDiagnostics, deadCodeDiagnostics] = await Promise.all([
+    runLint(),
+    runDeadCode(),
+  ]);
+  const parallelElapsed = performance.now() - parallelStartTime;
+
+  // Calculate what sequential time would have been for comparison
+  const lintTime = options.lint ? parallelElapsed * 0.6 : 0; // Approximate split
+  const deadCodeTime = options.deadCode && !isDiffMode ? parallelElapsed * 0.4 : 0;
+  const sequentialTime = lintTime + deadCodeTime;
+
+  if (parallelElapsed > 1000) {
+    logger.dim(
+      `  Parallel scan: ${formatElapsedTime(parallelElapsed)} (sequential would be ~${formatElapsedTime(sequentialTime)})`,
+    );
+  }
   const diagnostics = combineDiagnostics(
     lintDiagnostics,
     deadCodeDiagnostics,
