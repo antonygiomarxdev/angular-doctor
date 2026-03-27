@@ -55,6 +55,12 @@ const detectFramework = (dependencies: Record<string, string>): AngularFramework
 const detectAngularVersion = (dependencies: Record<string, string>): string | null =>
   dependencies["@angular/core"] ?? null;
 
+const detectAngularMajorVersion = (version: string | null): number | null => {
+  if (!version) return null;
+  const major = parseInt(version.match(/\d+/)?.[0] ?? "", 10);
+  return isNaN(major) ? null : major;
+};
+
 const detectStandaloneComponents = (packageJson: PackageJson): boolean => {
   const deps = collectAllDependencies(packageJson);
   const angularVersion = deps["@angular/core"];
@@ -63,6 +69,21 @@ const detectStandaloneComponents = (packageJson: PackageJson): boolean => {
   // Angular 17+ makes standalone the default
   const majorVersion = parseInt(angularVersion.match(/\d+/)?.[0] ?? "", 10);
   return !isNaN(majorVersion) && majorVersion >= 14;
+};
+
+const detectNgRxPackages = (dependencies: Record<string, string>): boolean => {
+  return Object.keys(dependencies).some(
+    (dep) => dep.startsWith("@ngrx/") || dep === "@ngrx/store",
+  );
+};
+
+const detectAngularMaterial = (dependencies: Record<string, string>): boolean => {
+  return Object.keys(dependencies).includes("@angular/material");
+};
+
+const detectSignals = (angularMajorVersion: number | null): boolean => {
+  // Angular Signals are available starting from Angular 17
+  return angularMajorVersion !== null && angularMajorVersion >= 17;
 };
 
 const countSourceFiles = (rootDirectory: string): number => {
@@ -113,6 +134,7 @@ export const discoverProject = (directory: string): ProjectInfo => {
   const packageJson = readPackageJson(path.join(packageJsonDir, "package.json"));
   const allDeps = collectAllDependencies(packageJson);
   const angularVersion = detectAngularVersion(allDeps);
+  const angularMajorVersion = detectAngularMajorVersion(angularVersion);
   const framework = detectFramework(allDeps);
 
   // tsconfig.json — check the project directory first, then the package.json directory
@@ -121,6 +143,9 @@ export const discoverProject = (directory: string): ProjectInfo => {
     fs.existsSync(path.join(packageJsonDir, "tsconfig.json"));
 
   const hasStandaloneComponents = detectStandaloneComponents(packageJson);
+  const hasNgRx = detectNgRxPackages(allDeps);
+  const hasAngularMaterial = detectAngularMaterial(allDeps);
+  const hasSignals = detectSignals(angularMajorVersion);
   const sourceFileCount = countSourceFiles(directory);
 
   // Use the Angular project name from angular.json if possible, otherwise from package.json
@@ -135,9 +160,13 @@ export const discoverProject = (directory: string): ProjectInfo => {
     rootDirectory: directory,
     projectName,
     angularVersion,
+    angularMajorVersion,
     framework,
     hasTypeScript,
     hasStandaloneComponents,
+    hasNgRx,
+    hasAngularMaterial,
+    hasSignals,
     sourceFileCount,
   };
 };

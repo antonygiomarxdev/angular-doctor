@@ -10,9 +10,13 @@ export interface ProjectInfo {
   rootDirectory: string;
   projectName: string;
   angularVersion: string | null;
+  angularMajorVersion: number | null;
   framework: AngularFramework;
   hasTypeScript: boolean;
   hasStandaloneComponents: boolean;
+  hasNgRx: boolean;
+  hasAngularMaterial: boolean;
+  hasSignals: boolean;
   sourceFileCount: number;
 }
 
@@ -56,6 +60,7 @@ export interface ScanOptions {
   fast?: boolean;
   report?: boolean | string;
   includePaths?: string[];
+  rules?: string;
 }
 
 export interface KnipIssue {

@@ -433,12 +433,16 @@ const buildEslintConfig = (
 
     // Security
     "@angular-eslint/relative-url-prefix": "error",
-
-    // Signals (Angular 17+)
-    "@angular-eslint/prefer-signals": "warn",
-    "@angular-eslint/prefer-signal-model": "warn",
-    "@angular-eslint/no-uncalled-signals": "error",
   };
+
+  // Signals rules (Angular 17+ only - conditional)
+  const signalsRules: Linter.RulesRecord = packagePresence.hasSignals
+    ? {
+        "@angular-eslint/prefer-signals": "warn",
+        "@angular-eslint/prefer-signal-model": "warn",
+        "@angular-eslint/no-uncalled-signals": "error",
+      }
+    : {};
 
   // TypeScript rules
   const tsRules: Linter.RulesRecord = {
@@ -485,6 +489,7 @@ const buildEslintConfig = (
       rules: {
         ...angularRules,
         ...tsRules,
+        ...signalsRules,
         ...ngrxRules,
         ...materialRules,
       },
@@ -522,11 +527,17 @@ const parsePluginAndRule = (
   return { plugin: "eslint", rule: ruleId };
 };
 
+export interface FrameworkInfo {
+  hasNgRx: boolean;
+  hasAngularMaterial: boolean;
+  hasSignals: boolean;
+}
+
 export const runEslint = async (
   rootDirectory: string,
   hasTypeScript: boolean,
   includePaths?: string[],
-  options?: { useTypeAware?: boolean },
+  options?: { useTypeAware?: boolean; frameworkInfo?: FrameworkInfo },
 ): Promise<Diagnostic[]> => {
   if (includePaths !== undefined && includePaths.length === 0) {
     return [];
@@ -536,22 +547,32 @@ export const runEslint = async (
     ? path.join(rootDirectory, "tsconfig.json")
     : null;
 
-  // Load package.json to detect package presence for conditional rules
-  let packagePresence: PackagePresence = {
-    hasNgRx: false,
-    hasAngularMaterial: false,
-    hasSignals: true,
-  };
-
-  try {
-    const packageJsonPath = path.join(rootDirectory, "package.json");
-    if (fs.existsSync(packageJsonPath)) {
-      const packageJsonContent = fs.readFileSync(packageJsonPath, "utf-8");
-      const packageJson = JSON.parse(packageJsonContent) as PackageJson;
-      packagePresence = detectPackagePresence(packageJson);
+  // Use provided framework info or detect if not provided
+  let packagePresence: PackagePresence;
+  if (options?.frameworkInfo) {
+    // Use the framework detection info passed from scan.ts (via discover-project)
+    packagePresence = {
+      hasNgRx: options.frameworkInfo.hasNgRx,
+      hasAngularMaterial: options.frameworkInfo.hasAngularMaterial,
+      hasSignals: options.frameworkInfo.hasSignals,
+    };
+  } else {
+    // Fallback: detect package presence from package.json
+    packagePresence = {
+      hasNgRx: false,
+      hasAngularMaterial: false,
+      hasSignals: true,
+    };
+    try {
+      const packageJsonPath = path.join(rootDirectory, "package.json");
+      if (fs.existsSync(packageJsonPath)) {
+        const packageJsonContent = fs.readFileSync(packageJsonPath, "utf-8");
+        const packageJson = JSON.parse(packageJsonContent) as PackageJson;
+        packagePresence = detectPackagePresence(packageJson);
+      }
+    } catch {
+      // If we can't read package.json, default to no conditional rules
     }
-  } catch {
-    // If we can't read package.json, default to no conditional rules
   }
 
   const cacheRoot = path.join(

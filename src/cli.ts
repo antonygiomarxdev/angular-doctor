@@ -21,6 +21,7 @@ interface CliFlags {
   fast?: boolean;
   project?: string;
   diff?: boolean | string;
+  rules?: string;
 }
 
 const exitWithHint = () => {
@@ -68,6 +69,7 @@ const resolveCliScanOptions = (
     fast: isCliOverride("fast")
       ? Boolean(flags.fast)
       : (userConfig?.fast ?? false),
+    rules: flags.rules,
   };
 };
 
@@ -116,6 +118,10 @@ const program = new Command()
     "select workspace project (comma-separated for multiple)",
   )
   .option("--diff [base]", "scan only files changed vs base branch")
+  .option(
+    "--rules <categories>",
+    "force-enable specific rule categories (signals,ngrx,material) or 'all'",
+  )
   .action(async (directory: string, flags: CliFlags) => {
     const isScoreOnly = flags.score;
 

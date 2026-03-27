@@ -38,7 +38,7 @@ import { highlighter } from "./utils/highlighter.js";
 import { indentMultilineText } from "./utils/indent-multiline-text.js";
 import { loadConfig } from "./utils/load-config.js";
 import { logger } from "./utils/logger.js";
-import { runEslint } from "./utils/run-eslint.js";
+import { runEslint, type FrameworkInfo } from "./utils/run-eslint.js";
 import { runKnip } from "./utils/run-knip.js";
 import { spinner } from "./utils/spinner.js";
 
@@ -492,6 +492,7 @@ interface ResolvedScanOptions {
   report: boolean | string | undefined;
   useTypeAwareLint: boolean;
   includePaths: string[];
+  rules: string | undefined;
 }
 
 const mergeScanOptions = (
@@ -510,7 +511,28 @@ const mergeScanOptions = (
     report: inputOptions.report ?? false,
     useTypeAwareLint: !fastMode,
     includePaths: inputOptions.includePaths ?? [],
+    rules: inputOptions.rules,
   };
+};
+
+/**
+ * Parses the --rules CLI flag and returns a FrameworkInfo override.
+ * Categories: signals, ngrx, material
+ * Example: "signals,ngrx" force-enables both signals and ngrx rules.
+ */
+const parseRulesOverride = (rules: string | undefined): Partial<FrameworkInfo> | undefined => {
+  if (!rules || rules === "all") return undefined;
+
+  const override: Partial<FrameworkInfo> = {};
+  const categories = rules.split(",").map((c) => c.trim().toLowerCase());
+
+  for (const category of categories) {
+    if (category === "signals") override.hasSignals = true;
+    else if (category === "ngrx") override.hasNgRx = true;
+    else if (category === "material") override.hasAngularMaterial = true;
+  }
+
+  return Object.keys(override).length > 0 ? override : undefined;
 };
 
 const printProjectDetection = (
@@ -584,11 +606,27 @@ export const scan = async (
       ? null
       : spinner("Running lint checks...").start();
     try {
+      // Build framework info from detected values
+      const detectedFrameworkInfo: FrameworkInfo = {
+        hasNgRx: projectInfo.hasNgRx,
+        hasAngularMaterial: projectInfo.hasAngularMaterial,
+        hasSignals: projectInfo.hasSignals,
+      };
+
+      // Apply CLI rules override if provided
+      const rulesOverride = parseRulesOverride(options.rules);
+      const frameworkInfo: FrameworkInfo = rulesOverride
+        ? { ...detectedFrameworkInfo, ...rulesOverride }
+        : detectedFrameworkInfo;
+
       const lintDiagnostics = await runEslint(
         directory,
         projectInfo.hasTypeScript,
         computedIncludePaths,
-        { useTypeAware: options.useTypeAwareLint },
+        {
+          useTypeAware: options.useTypeAwareLint,
+          frameworkInfo,
+        },
       );
       lintSpinner?.succeed("Running lint checks.");
       return lintDiagnostics;
