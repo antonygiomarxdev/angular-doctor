@@ -533,14 +533,25 @@ export interface FrameworkInfo {
   hasSignals: boolean;
 }
 
+export interface LintError {
+  message: string;
+  stack?: string;
+  filePath?: string;
+}
+
+export interface RunEslintResult {
+  diagnostics: Diagnostic[];
+  errors: LintError[];
+}
+
 export const runEslint = async (
   rootDirectory: string,
   hasTypeScript: boolean,
   includePaths?: string[],
   options?: { useTypeAware?: boolean; frameworkInfo?: FrameworkInfo },
-): Promise<Diagnostic[]> => {
+): Promise<RunEslintResult> => {
   if (includePaths !== undefined && includePaths.length === 0) {
-    return [];
+    return { diagnostics: [], errors: [] };
   }
 
   const tsconfigPath = hasTypeScript
@@ -599,10 +610,38 @@ export const runEslint = async (
   const patterns = includePaths ?? ["**/*.ts"];
 
   let results: ESLint.LintResult[];
+  const errors: LintError[] = [];
   try {
     results = await eslint.lintFiles(patterns);
-  } catch {
-    return [];
+  } catch (error) {
+    // Capture parse errors and other ESLint failures as diagnostics
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    // Try to extract file path from error message
+    const filePathMatch = errorMessage.match(/^(.+?):\s* /);
+    const errorFilePath = filePathMatch ? path.relative(rootDirectory, filePathMatch[1]) : undefined;
+
+    errors.push({
+      message: errorMessage,
+      stack: errorStack,
+      filePath: errorFilePath,
+    });
+
+    // Create a diagnostic for the parse error
+    const parseErrorDiagnostic: Diagnostic = {
+      filePath: errorFilePath ?? "unknown",
+      plugin: "eslint",
+      rule: "parse-error",
+      severity: "error",
+      message: errorMessage,
+      help: "Fix the syntax error in this file. ESLint could not parse the file.",
+      line: 0,
+      column: 0,
+      category: "Parse Error",
+    };
+
+    return { diagnostics: [parseErrorDiagnostic], errors };
   }
 
   const diagnostics: Diagnostic[] = [];
@@ -627,5 +666,5 @@ export const runEslint = async (
     }
   }
 
-  return diagnostics;
+  return { diagnostics, errors };
 };
