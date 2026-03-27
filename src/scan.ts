@@ -38,7 +38,7 @@ import { highlighter } from "./utils/highlighter.js";
 import { indentMultilineText } from "./utils/indent-multiline-text.js";
 import { loadConfig } from "./utils/load-config.js";
 import { logger } from "./utils/logger.js";
-import { runEslint, type FrameworkInfo } from "./utils/run-eslint.js";
+import { runEslint, type FrameworkInfo, type LintError } from "./utils/run-eslint.js";
 import { runKnip } from "./utils/run-knip.js";
 import { spinner } from "./utils/spinner.js";
 
@@ -93,15 +93,25 @@ const printDiagnostics = (
 
   const sortedRuleGroups = sortBySeverity([...ruleGroups.entries()]);
 
-  for (const [, ruleDiagnostics] of sortedRuleGroups) {
+  // Separate errors and warnings for grouped output
+  const errorGroups = sortedRuleGroups.filter(
+    ([, diags]) => diags[0]?.severity === "error",
+  );
+  const warningGroups = sortedRuleGroups.filter(
+    ([, diags]) => diags[0]?.severity === "warning",
+  );
+
+  // Print errors section header if there are errors
+  if (errorGroups.length > 0) {
+    logger.error(`  ${errorGroups.length} error${errorGroups.length === 1 ? "" : "s"}:`);
+  }
+
+  for (const [, ruleDiagnostics] of errorGroups) {
     const firstDiagnostic = ruleDiagnostics[0];
-    const severitySymbol = firstDiagnostic.severity === "error" ? "✗" : "⚠";
+    const severitySymbol = "✗";
     const icon = colorizeBySeverity(severitySymbol, firstDiagnostic.severity);
     const count = ruleDiagnostics.length;
-    const countLabel =
-      count > 1
-        ? colorizeBySeverity(` (${count})`, firstDiagnostic.severity)
-        : "";
+    const countLabel = count > 1 ? colorizeBySeverity(` (${count})`, firstDiagnostic.severity) : "";
 
     logger.log(`  ${icon} ${firstDiagnostic.message}${countLabel}`);
     if (firstDiagnostic.help) {
@@ -112,8 +122,65 @@ const printDiagnostics = (
       const fileLines = buildFileLineMap(ruleDiagnostics);
 
       for (const [filePath, lines] of fileLines) {
-        const lineLabel = lines.length > 0 ? `: ${lines.join(", ")}` : "";
-        logger.dim(`    ${filePath}${lineLabel}`);
+        // Show file:line:column format in verbose mode
+        if (lines.length > 0) {
+          const locationLabel = lines
+            .slice(0, 5) // Limit to first 5 occurrences
+            .map((line) => {
+              const col = firstDiagnostic.column > 0 ? `:${firstDiagnostic.column}` : "";
+              return `${line}${col}`;
+            })
+            .join(", ");
+          logger.dim(`    ${filePath}: ${locationLabel}`);
+          if (lines.length > 5) {
+            logger.dim(`    ... and ${lines.length - 5} more locations`);
+          }
+        } else {
+          logger.dim(`    ${filePath}`);
+        }
+      }
+    }
+
+    logger.break();
+  }
+
+  // Print warnings section header if there are warnings
+  if (warningGroups.length > 0) {
+    logger.warn(`  ${warningGroups.length} warning${warningGroups.length === 1 ? "" : "s"}:`);
+  }
+
+  for (const [, ruleDiagnostics] of warningGroups) {
+    const firstDiagnostic = ruleDiagnostics[0];
+    const severitySymbol = "⚠";
+    const icon = colorizeBySeverity(severitySymbol, firstDiagnostic.severity);
+    const count = ruleDiagnostics.length;
+    const countLabel = count > 1 ? colorizeBySeverity(` (${count})`, firstDiagnostic.severity) : "";
+
+    logger.log(`  ${icon} ${firstDiagnostic.message}${countLabel}`);
+    if (firstDiagnostic.help) {
+      logger.dim(indentMultilineText(firstDiagnostic.help, "    "));
+    }
+
+    if (isVerbose) {
+      const fileLines = buildFileLineMap(ruleDiagnostics);
+
+      for (const [filePath, lines] of fileLines) {
+        // Show file:line:column format in verbose mode
+        if (lines.length > 0) {
+          const locationLabel = lines
+            .slice(0, 5) // Limit to first 5 occurrences
+            .map((line) => {
+              const col = firstDiagnostic.column > 0 ? `:${firstDiagnostic.column}` : "";
+              return `${line}${col}`;
+            })
+            .join(", ");
+          logger.dim(`    ${filePath}: ${locationLabel}`);
+          if (lines.length > 5) {
+            logger.dim(`    ... and ${lines.length - 5} more locations`);
+          }
+        } else {
+          logger.dim(`    ${filePath}`);
+        }
       }
     }
 
@@ -599,6 +666,7 @@ export const scan = async (
 
   let didLintFail = false;
   let didDeadCodeFail = false;
+  let lintErrors: LintError[] = [];
 
   const runLint = async (): Promise<Diagnostic[]> => {
     if (!options.lint) return [];
@@ -619,7 +687,7 @@ export const scan = async (
         ? { ...detectedFrameworkInfo, ...rulesOverride }
         : detectedFrameworkInfo;
 
-      const lintDiagnostics = await runEslint(
+      const result = await runEslint(
         directory,
         projectInfo.hasTypeScript,
         computedIncludePaths,
@@ -629,7 +697,25 @@ export const scan = async (
         },
       );
       lintSpinner?.succeed("Running lint checks.");
-      return lintDiagnostics;
+
+      // Track lint errors for reporting
+      if (result.errors.length > 0) {
+        lintErrors = result.errors;
+        // Log errors in verbose mode
+        if (options.verbose) {
+          logger.break();
+          logger.error("ESLint encountered the following errors:");
+          for (const error of result.errors) {
+            logger.error(`  ${error.message}`);
+            if (error.stack) {
+              logger.dim(error.stack);
+            }
+          }
+          logger.break();
+        }
+      }
+
+      return result.diagnostics;
     } catch (error) {
       didLintFail = true;
       lintSpinner?.fail("Lint checks failed (non-fatal, skipping).");
@@ -690,9 +776,17 @@ export const scan = async (
 
   const scoreResult = calculateScore(diagnostics);
 
+  // Calculate error and warning counts
+  const errorCount = diagnostics.filter(
+    (diagnostic) => diagnostic.severity === "error",
+  ).length;
+  const warningCount = diagnostics.filter(
+    (diagnostic) => diagnostic.severity === "warning",
+  ).length;
+
   if (options.scoreOnly) {
     logger.log(`${scoreResult.score}`);
-    return { diagnostics, scoreResult, skippedChecks };
+    return { diagnostics, scoreResult, skippedChecks, errorCount, warningCount };
   }
 
   if (diagnostics.length === 0) {
@@ -712,7 +806,7 @@ export const scan = async (
       printBranding(scoreResult.score);
       printScoreGauge(scoreResult.score, scoreResult.label);
     }
-    return { diagnostics, scoreResult, skippedChecks };
+    return { diagnostics, scoreResult, skippedChecks, errorCount, warningCount };
   }
 
   printDiagnostics(diagnostics, options.verbose);
@@ -738,5 +832,5 @@ export const scan = async (
     );
   }
 
-  return { diagnostics, scoreResult, skippedChecks };
+  return { diagnostics, scoreResult, skippedChecks, errorCount, warningCount };
 };
