@@ -229,6 +229,7 @@ const buildMarkdownReport = (
   elapsedMilliseconds: number,
   scoreResult: ScoreResult | null,
   totalSourceFileCount: number,
+  isDiffMode: boolean = false,
 ): string => {
   const errorCount = diagnostics.filter(
     (diagnostic) => diagnostic.severity === "error",
@@ -247,10 +248,11 @@ const buildMarkdownReport = (
   ];
 
   if (scoreResult) {
+    const labelSuffix = isDiffMode ? " (partial)" : "";
     lines.push(
       "## Score",
       "",
-      `**${scoreResult.score} / ${PERFECT_SCORE}** — ${scoreResult.label}`,
+      `**${scoreResult.score} / ${PERFECT_SCORE}** — ${scoreResult.label}${labelSuffix}`,
       "",
     );
   }
@@ -264,6 +266,7 @@ const buildMarkdownReport = (
       ? `- Affected files: **${affectedFileCount}/${totalSourceFileCount}**`
       : `- Affected files: **${affectedFileCount}**`,
     `- Elapsed: **${elapsed}**`,
+    isDiffMode ? `- Mode: **diff (dead code detection skipped)**` : "",
     "",
   );
 
@@ -334,6 +337,7 @@ const writeDiagnosticsDirectory = (
   totalSourceFileCount: number,
   report: boolean | string | undefined,
   baseDirectory: string,
+  isDiffMode: boolean = false,
 ): { outputDirectory: string; markdownPath: string | null } => {
   const outputDirectory = join(tmpdir(), `angular-doctor-${randomUUID()}`);
   mkdirSync(outputDirectory);
@@ -371,6 +375,7 @@ const writeDiagnosticsDirectory = (
         elapsedMilliseconds,
         scoreResult,
         totalSourceFileCount,
+        isDiffMode,
       ),
     );
   }
@@ -521,6 +526,7 @@ const printSummary = (
   totalSourceFileCount: number,
   report: boolean | string | undefined,
   baseDirectory: string,
+  isDiffMode: boolean = false,
 ): void => {
   const summaryFramedLines = [
     ...buildBrandingLines(scoreResult),
@@ -540,6 +546,7 @@ const printSummary = (
       totalSourceFileCount,
       report,
       baseDirectory,
+      isDiffMode,
     );
     logger.break();
     logger.dim(`  Full diagnostics written to ${outputDirectory}`);
@@ -822,6 +829,7 @@ export const scan = async (
     displayedSourceFileCount,
     options.report,
     directory,
+    isDiffMode,
   );
 
   if (hasSkippedChecks) {
